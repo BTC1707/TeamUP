@@ -1,9 +1,4 @@
-/**
- * About section — structure only.
- *
- * TODO(teammate): replace the stub paragraph with final About Us copy.
- * You usually only need to edit the <h2> and the <p className="landing-about-body">.
- */
+/** About section for the TeamUP landing page. */
 export function LandingAbout() {
   return (
     <section className='landing-about' id='about'>
@@ -12,8 +7,10 @@ export function LandingAbout() {
       <h2>Built for student project groups</h2>
 
       <p className='landing-about-body'>
-        [About us copy goes here.] TeamUP helps classmates coordinate group projects—shared tasks,
-        milestones, availability, and files. Rewrite this paragraph with your team’s story.
+        Group projects are easier when everyone knows what needs to happen next. TeamUP gives
+        classmates one shared place to organize tasks, track milestones, coordinate availability,
+        and keep project files together. With AI-assisted planning to help teams get unstuck, TeamUP
+        makes it easier to stay organized and move forward together. 
       </p>
     </section>
   );
