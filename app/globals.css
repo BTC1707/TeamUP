@@ -367,6 +367,28 @@ h3 {
 .panel-heading .btn {
   font-size: 13px;
 }
+.milestone-menu-trigger {
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px;
+  background: transparent;
+}
+.milestone-menu-trigger:hover {
+  background: #f1efff;
+}
+.milestone-dropdown {
+  border: 1px solid #bdb4f4;
+  border-left: 3px solid #6251df;
+  background: #dbd9fc;
+  color: #3e3b65;
+}
+.milestone-dropdown [data-slot='dropdown-menu-item']:focus,
+.milestone-dropdown [data-slot='dropdown-menu-item'][data-highlighted] {
+  background: #c9c3f5;
+  color: #39327d;
+}
 .task-row {
   display: flex;
   align-items: center;

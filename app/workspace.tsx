@@ -60,6 +60,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { emptyProject, future, type Project, type Task, type Member } from '@/lib/model';
@@ -1019,15 +1025,34 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   <section className='panel'>
                     <div className='panel-heading'>
                       <h2>Milestones</h2>
-                      <button
-                        aria-label='View milestones'
-                        onClick={() => {
-                          setView('Milestones');
-                          setMilestoneFilter('all');
-                        }}
-                      >
-                        <MoreHorizontal size={20} color='#9ca4b3' />
-                      </button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type='button'
+                            className='milestone-menu-trigger'
+                            aria-label='Milestone options'
+                          >
+                            <MoreHorizontal size={20} color='#9ca4b3' />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align='end' className='milestone-dropdown'>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              setView('Milestones');
+                              setMilestoneFilter('all');
+                            }}
+                          >
+                            View all milestones
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              if (requireProject()) open('milestone', { due: project.due });
+                            }}
+                          >
+                            Add milestone
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
                     {milestoneList.length ? (
                       milestoneList
