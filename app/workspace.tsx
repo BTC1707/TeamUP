@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AssignmentChat from './assignment-chat';
 import ConnectAI from './connect-ai';
 import InviteLink from './invite-link';
@@ -121,8 +121,28 @@ function isBrowserLocalHost() {
   return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
 }
 
+const TUTORIAL_SEEN_KEY = 'teamup.tutorialSeen';
+
+function hasLocalTutorialSeen() {
+  try {
+    return localStorage.getItem(TUTORIAL_SEEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function rememberLocalTutorialSeen() {
+  try {
+    localStorage.setItem(TUTORIAL_SEEN_KEY, '1');
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 export default function Workspace({ demoMode = false }: { demoMode?: boolean }) {
   const [tour, setTour] = useState<number | null>(null);
+  const [tutorialPrompt, setTutorialPrompt] = useState(false);
+  const tutorialPromptStarting = useRef(false);
   const [canConfigureAI, setCanConfigureAI] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project>(emptyProject);
@@ -160,6 +180,45 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
   const mine = project.tasks.filter((t) => t.assignee === me && t.status !== 'done');
   const isOwner = !isDemo && project.owner === user?.id;
 
+  function offerTutorialIfNeeded(seen?: boolean) {
+    if (seen || hasLocalTutorialSeen()) return;
+    setTutorialPrompt(true);
+  }
+
+  async function markTutorialSeen() {
+    rememberLocalTutorialSeen();
+    setUser((current) => (current ? { ...current, tutorialSeen: true } : current));
+    if (!localOnly && !demoMode && user) {
+      try {
+        await api('/api/workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'tutorial' }),
+        });
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    }
+  }
+
+  function startTutorial() {
+    tutorialPromptStarting.current = true;
+    setTutorialPrompt(false);
+    setModal('');
+    setTour(0);
+    toast.message('Tutorial started', {
+      description: 'Follow the steps in the panel at the bottom of the screen.',
+      position: 'top-center',
+      duration: 4500,
+    });
+  }
+
+  function declineTutorial() {
+    tutorialPromptStarting.current = false;
+    setTutorialPrompt(false);
+    void markTutorialSeen();
+  }
+
   function startLocalSandbox() {
     clearLocalAdminSession();
     const p = practiceProject();
@@ -169,7 +228,8 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
     setUser(demoUser);
     setLoading(false);
     setError('');
-    setTour(0);
+    setTour(null);
+    offerTutorialIfNeeded(false);
   }
 
   /** Signed-in local admin — sidebar shows "admin", not Demo visitor. */
@@ -182,6 +242,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
     setLoading(false);
     setError('');
     setTour(null);
+    offerTutorialIfNeeded(false);
   }
 
   const isLocalAdmin =
@@ -204,7 +265,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
       setProjects(data.projects);
       setAiReady(data.aiReady);
       setCanConfigureAI(data.canConfigureAI);
-      if (!data.user.tutorialSeen) setTour(0);
+      offerTutorialIfNeeded(!!data.user.tutorialSeen);
       setProject(
         data.projects.find(
           (p: Project) => p.id === new URLSearchParams(window.location.search).get('project'),
@@ -254,7 +315,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
             setProjects(data.projects || []);
             setAiReady(!!data.aiReady);
             setCanConfigureAI(!!data.canConfigureAI);
-            if (!data.user.tutorialSeen) setTour(0);
+            offerTutorialIfNeeded(!!data.user.tutorialSeen);
             setProject(
               (data.projects || []).find(
                 (p: Project) =>
@@ -622,15 +683,6 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
         </SidebarContent>
         <SidebarFooter>
           <button
-            className='project-option'
-            onClick={() => {
-              if (user) setTour(0);
-              else window.location.assign('/demo');
-            }}
-          >
-            Getting started guide
-          </button>
-          <button
             className='account'
             onClick={() =>
               open('profile', {
@@ -666,7 +718,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
             <span className='mobile-title'>teamup.</span>
           </div>
           <div className='top-actions'>
-            <span className='muted text-[13px] hidden sm:block'>
+            <span className='muted text-[13px] hidden sm:block' suppressHydrationWarning>
               {new Date().toLocaleDateString('en-US', {
                 weekday: 'short',
                 month: 'short',
@@ -752,24 +804,14 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
               filter={filter}
               onClose={() => {
                 setTour(null);
-                if (!localOnly && user)
-                  api('/api/workspace', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'tutorial' }),
-                  }).catch((e) => toast.error(e.message));
+                void markTutorialSeen();
               }}
               onBack={() => setTour(Math.max(0, tour - 1))}
               onNext={() => {
                 if (tour < 5) setTour(tour + 1);
                 else {
                   setTour(null);
-                  if (!localOnly && user)
-                    api('/api/workspace', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ action: 'tutorial' }),
-                    }).catch((e) => toast.error(e.message));
+                  void markTutorialSeen();
                   toast.success('You’re ready to go.');
                 }
               }}
@@ -782,12 +824,15 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   setView('My tasks');
                   setFilter('active');
                 }
-                if (tour === 3) setView('Overview');
+                if (tour === 3) {
+                  setView('Overview');
+                  setFilter('active');
+                }
                 if (tour === 4) setView('Project settings');
               }}
             />
           )}
-          <div className='page-heading'>
+          <div className='page-heading' data-tutorial-step='0'>
             <div>
               <h1>
                 {view === 'Overview'
@@ -803,6 +848,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
             {view !== 'Project settings' && view !== 'Availability' && (
               <button
                 className='btn primary'
+                data-tutorial-step='1'
                 onClick={() => {
                   if (view === 'Assignment chat') {
                     if (requireProject()) {
@@ -955,6 +1001,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                     type='button'
                     className='stat stat-link'
                     key={label}
+                    data-tutorial-step={target === 'done' ? '3' : undefined}
                     aria-label={`View ${label.toLowerCase()} (${n})`}
                     onClick={() => {
                       if (target === 'upcoming') {
@@ -1110,7 +1157,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
           )}
           {!isDemo && view === 'My tasks' && (
             <>
-              <div className='toolbar'>
+              <div className='toolbar' data-tutorial-step='2'>
                 <Tabs value={filter} onValueChange={setFilter}>
                   <TabsList>
                     <TabsTrigger value='active'>Active tasks</TabsTrigger>
@@ -1343,7 +1390,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
             </>
           )}
           {!isDemo && view === 'Project settings' && (
-            <div className='stack project-settings'>
+            <div className='stack project-settings' data-tutorial-step='4'>
               <section className='panel'>
                 <div className='panel-heading'>
                   <div>
@@ -1394,6 +1441,35 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
           )}
         </div>
       </main>
+      <Dialog
+        open={tutorialPrompt}
+        onOpenChange={(open) => {
+          if (open) return;
+          if (tutorialPromptStarting.current) {
+            tutorialPromptStarting.current = false;
+            return;
+          }
+          declineTutorial();
+        }}
+      >
+        <DialogContent className='tutorial-prompt-dialog sm:max-w-[420px]'>
+          <DialogHeader>
+            <DialogTitle>Do you want to use the tutorial?</DialogTitle>
+            <DialogDescription>
+              A short walkthrough helps you create a project, add tasks, and invite teammates. You
+              can restart it later with Run Tutorial in your profile.
+            </DialogDescription>
+          </DialogHeader>
+          <div className='tutorial-prompt-actions'>
+            <button type='button' className='btn primary' onClick={startTutorial}>
+              Yes, start tutorial
+            </button>
+            <button type='button' className='btn' onClick={declineTutorial}>
+              No thanks
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={!!modal}
         onOpenChange={(v) => {
@@ -1659,6 +1735,11 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   {aiReady ? 'Update Gemini connection' : 'Connect Gemini'}
                 </button>
               )}
+              {modal === 'profile' && user && (
+                <button type='button' className='btn' onClick={startTutorial}>
+                  Run Tutorial
+                </button>
+              )}
               {modal === 'profile' && user && !localOnly && (
                 <a className='btn' href='/api/auth/signout?return_to=%2F'>
                   <LogOut size={16} />
@@ -1836,7 +1917,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
           )}
         </DialogContent>
       </Dialog>
-      <Toaster position='bottom-right' />
+      <Toaster position='top-center' richColors closeButton />
     </SidebarProvider>
   );
 }

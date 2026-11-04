@@ -1189,14 +1189,96 @@ h3 {
 .demo-banner-action {
   border-color: #a8afbd;
 }
+.tutorial-banner {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+  padding: 10px 14px;
+  border: 1px solid #c9c2f0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f7f5ff 0%, #efeaff 100%);
+  color: #4c456e;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 1px 0 #ffffffcc inset;
+}
 .tutorial-card {
-  border: 1px solid #bdb4f4;
-  border-left: 4px solid #6251df;
-  background: #dbd9fc;
-  border-radius: 12px;
-  padding: 20px 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 4px 18px #6251df0d;
+  position: fixed;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 45;
+  width: min(560px, calc(100vw - 28px));
+  transform: translateX(-50%);
+  border: 1px solid #a89cf0;
+  border-left: 5px solid #5149c7;
+  background: #f4f2ff;
+  border-radius: 16px;
+  padding: 12px 22px 20px;
+  box-shadow:
+    0 18px 50px #222b4033,
+    0 0 0 1px #ffffff80 inset;
+  outline: none;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+  animation: tutorial-card-in 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.tutorial-card.positioned {
+  animation: none;
+}
+.tutorial-card.dragging {
+  cursor: grabbing;
+  box-shadow:
+    0 22px 56px #222b4040,
+    0 0 0 1px #ffffff80 inset;
+}
+.tutorial-card button,
+.tutorial-card a,
+.tutorial-card input {
+  cursor: pointer;
+  user-select: auto;
+  touch-action: manipulation;
+}
+.tutorial-drag-handle {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 0 10px;
+}
+.tutorial-drag-handle span {
+  width: 18px;
+  height: 3px;
+  border-radius: 99px;
+  background: #b7b0e2;
+}
+.tutorial-drag-hint {
+  margin: 0 0 8px !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+  color: #7a72a9 !important;
+  font-weight: 600;
+}
+.tutorial-progress {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.tutorial-progress span {
+  flex: 1;
+  height: 4px;
+  border-radius: 99px;
+  background: #d5d0f0;
+}
+.tutorial-progress span.done {
+  background: #8b82df;
+}
+.tutorial-progress span.active {
+  background: #5149c7;
+  box-shadow: 0 0 0 3px #5149c726;
 }
 .tutorial-top {
   display: flex;
@@ -1205,26 +1287,191 @@ h3 {
   gap: 12px;
 }
 .tutorial-top > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
-  letter-spacing: 1px;
-  color: #6251df;
+  letter-spacing: 0.04em;
+  color: #5b54d9;
   font-weight: 700;
+  text-transform: uppercase;
+}
+.tutorial-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #5149c7;
+  color: #fff;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+.tutorial-live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #b8f0c8;
+  box-shadow: 0 0 0 0 #b8f0c8aa;
+  animation: tutorial-pulse 1.6s ease-out infinite;
 }
 .tutorial-card h2 {
-  font-size: 21px;
-  margin: 10px 0;
+  font-size: 22px;
+  letter-spacing: -0.4px;
+  margin: 10px 0 8px;
 }
 .tutorial-card p {
   font-size: 15px;
   line-height: 1.6;
-  color: #66738a;
-  max-width: 720px;
+  color: #5a6478;
+  margin: 0;
 }
 .tutorial-actions {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
   margin-top: 16px;
+}
+body.tutorial-running .app-main {
+  box-shadow: inset 3px 0 0 #5149c7;
+}
+@keyframes tutorial-card-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+@keyframes tutorial-pulse {
+  0% {
+    box-shadow: 0 0 0 0 #b8f0c8aa;
+  }
+  70% {
+    box-shadow: 0 0 0 8px #b8f0c800;
+  }
+  100% {
+    box-shadow: 0 0 0 0 #b8f0c800;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tutorial-card,
+  .tutorial-live::before {
+    animation: none;
+  }
+}
+@media (max-width: 760px) {
+  .tutorial-card.mobile {
+    left: 12px;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    width: auto;
+    max-height: min(42vh, 320px);
+    transform: none;
+    padding: 12px 14px 14px;
+    overflow: auto;
+    cursor: default;
+    touch-action: pan-y;
+    user-select: auto;
+    animation: tutorial-mobile-in 0.28s ease;
+  }
+  .tutorial-card.mobile h2 {
+    font-size: 18px;
+    margin: 6px 0 4px;
+  }
+  .tutorial-card.mobile p {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .tutorial-card.mobile .tutorial-actions {
+    margin-top: 10px;
+    gap: 8px;
+  }
+  .tutorial-card.mobile .tutorial-actions .btn {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+    min-height: 40px;
+  }
+  .tutorial-mobile-chip {
+    position: fixed;
+    left: 12px;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    z-index: 45;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #c9c2f0;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 12px 28px #222b4022;
+  }
+  .tutorial-mobile-chip strong {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #5b54d9;
+  }
+  .tutorial-mobile-chip span {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #222b40;
+  }
+  .tutorial-mobile-chip-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .tutorial-mobile-chip-actions .btn {
+    min-height: 36px;
+    padding: 0 12px;
+  }
+  body.tutorial-mobile .content {
+    padding-bottom: 88px;
+  }
+  [data-tutorial-step].tutorial-focus {
+    outline: 3px solid #5149c7;
+    outline-offset: 4px;
+    border-radius: 12px;
+    transition: outline-color 0.2s ease;
+  }
+}
+@keyframes tutorial-mobile-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+[data-sonner-toaster] [data-sonner-toast] {
+  background: #fff !important;
+  opacity: 1 !important;
+  border: 1px solid #e5e8ef !important;
+  box-shadow: 0 10px 30px #222b4014 !important;
+  backdrop-filter: none !important;
+}
+.tutorial-prompt-dialog {
+  text-align: center;
+}
+.tutorial-prompt-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+.tutorial-prompt-actions .btn {
+  width: 100%;
+  justify-content: center;
 }
 .btn.danger {
   color: #b42336;
