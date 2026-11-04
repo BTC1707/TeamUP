@@ -1494,6 +1494,21 @@ body.tutorial-running .app-main {
 .toolbar {
   align-items: flex-start;
 }
+.task-filter-tabs {
+  gap: 8px;
+}
+.task-filter-tabs [data-slot='tabs-trigger'] + [data-slot='tabs-trigger'] {
+  border-left-color: transparent;
+}
+.task-filter-tabs [data-slot='tabs-trigger'] + [data-slot='tabs-trigger']::before {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  left: -4.5px;
+  width: 1px;
+  background: #000;
+  content: '';
+}
 .project-settings {
   width: 100%;
   max-width: 800px;
