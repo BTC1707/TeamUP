@@ -1112,7 +1112,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
             <>
               <div className='toolbar'>
                 <Tabs value={filter} onValueChange={setFilter}>
-                  <TabsList>
+                  <TabsList className='bg-[#dbd9fc] task-filter-tabs'>
                     <TabsTrigger value='active'>Active tasks</TabsTrigger>
                     <TabsTrigger value='all'>All tasks</TabsTrigger>
                     <TabsTrigger value='progress'>In progress</TabsTrigger>
