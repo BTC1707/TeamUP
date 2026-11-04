@@ -587,8 +587,8 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
     );
   const milestoneList = project.milestones
     .filter((m) => milestoneFilter !== 'upcoming' || !m.done)
-    .map((m) => (
-      <div className='milestone' key={m.id}>
+    .map((m, index) => (
+      <div className={'milestone ' + (index === 0 ? 'milestone-first' : '')} key={m.id}>
         <button
           className='milestone-icon'
           aria-label={`Mark ${m.title} ${m.done ? 'incomplete' : 'complete'}`}
@@ -1039,7 +1039,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                     </div>
                     {taskRows(project.tasks.filter((t) => t.status !== 'done').slice(0, 6))}
                   </section>
-                  <section className='panel'>
+                  <section className='panel overview-team-progress-panel'>
                     <div className='panel-heading'>
                       <h2>Team progress</h2>
                       <button className='btn subtle' onClick={() => setView('Team')}>
@@ -1069,10 +1069,10 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   </section>
                 </div>
                 <div className='stack side'>
-                  <section className='panel'>
+                  <section className='panel overview-milestones-panel'>
                     <div className='panel-heading'>
                       <h2>Milestones</h2>
-                      <DropdownMenu>
+                      <DropdownMenu modal={false}>
                         <DropdownMenuTrigger asChild>
                           <button
                             type='button'
@@ -1194,7 +1194,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   </TabsList>
                 </Tabs>
               </div>
-              <section className='panel'>
+              <section className='panel milestones-page-panel'>
                 <div className='panel-heading'>
                   <h2>The path to {fmt(project.due)}</h2>
                   <span className='subtext'>

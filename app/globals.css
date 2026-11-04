@@ -381,7 +381,7 @@ h3 {
 .milestone-dropdown {
   border: 1px solid #bdb4f4;
   border-left: 3px solid #6251df;
-  background: #dbd9fc;
+  background: #fff;
   color: #3e3b65;
 }
 .milestone-dropdown [data-slot='dropdown-menu-item']:focus,
@@ -441,6 +441,15 @@ h3 {
   gap: 14px;
   padding: 0 22px 23px;
   position: relative;
+}
+.overview-milestones-panel .panel-heading + .milestone {
+  padding-top: 18px;
+}
+.milestones-page-panel .milestone-first {
+  margin-top: 18px;
+}
+.overview-team-progress-panel .panel-heading + .member-row {
+  padding-top: 18px;
 }
 .milestone-icon {
   background: #f4f2fe;
