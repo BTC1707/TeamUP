@@ -4,6 +4,7 @@ import AssignmentChat from './assignment-chat';
 import ConnectAI from './connect-ai';
 import InviteLink from './invite-link';
 import Tutorial from './tutorial';
+import DemoLink from './demo-link';
 import { practiceProject, demoUser } from '@/lib/demo';
 import {
   clearLocalAdminSession,
@@ -122,6 +123,8 @@ function isBrowserLocalHost() {
 }
 
 const TUTORIAL_SEEN_KEY = 'teamup.tutorialSeen';
+const WORKSPACE_VIEW_KEY = 'teamup.workspace.view';
+const DEMO_SESSION_KEY = 'teamup.demo.sessionActive';
 
 function hasLocalTutorialSeen() {
   try {
@@ -162,6 +165,8 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState('Overview');
+  const [viewRestored, setViewRestored] = useState(false);
+  const [hasSavedView, setHasSavedView] = useState(false);
   const [modal, setModal] = useState('');
   const [filter, setFilter] = useState('active');
   const [milestoneFilter, setMilestoneFilter] = useState('all');
@@ -173,6 +178,35 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
   // Localhost + /demo: fully interactive in memory (no Cloudflare DB).
   const [localOnly, setLocalOnly] = useState(demoMode);
   const isDemo = !project.id;
+
+  useEffect(() => {
+    try {
+      const demoAlreadyActive = window.sessionStorage.getItem(DEMO_SESSION_KEY) === '1';
+      if (demoMode && !demoAlreadyActive) {
+        window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+        window.sessionStorage.setItem(DEMO_SESSION_KEY, '1');
+      } else {
+        const savedView = window.sessionStorage.getItem(WORKSPACE_VIEW_KEY);
+        if (savedView && nav.some(([name]) => name === savedView)) {
+          setView(savedView);
+          setHasSavedView(true);
+        }
+      }
+    } catch {
+      // Keep the default view if browser storage is unavailable.
+    }
+    setViewRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!viewRestored) return;
+    try {
+      window.sessionStorage.setItem(WORKSPACE_VIEW_KEY, view);
+    } catch {
+      // The workspace still works if browser storage is unavailable.
+    }
+  }, [view, viewRestored]);
+
   const today = future(0);
   const done = project.tasks.filter((t) => t.status === 'done').length;
   const percent = Math.round((done / Math.max(1, project.tasks.length)) * 100);
@@ -376,6 +410,9 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
     ).catch(() => {});
     return () => controller.abort();
   }, [project, localOnly]);
+
+  if (!viewRestored) return null;
+
   function open(type: string, data: any = {}) {
     setDraft(data);
     setModal(type);
@@ -789,6 +826,12 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                 className='btn demo-banner-action'
                 href={isLocalAdmin ? '/api/auth/signout?return_to=%2F' : '/'}
                 onClick={() => {
+                  try {
+                    window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+                    window.sessionStorage.removeItem(DEMO_SESSION_KEY);
+                  } catch {
+                    // Ignore unavailable browser storage.
+                  }
                   if (isLocalAdmin) clearLocalAdminSession();
                 }}
               >
@@ -876,7 +919,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
               </button>
             )}
           </div>
-          {isDemo && (
+          {isDemo && (!loading || (viewRestored && !hasSavedView)) && (
             <section className='welcome-panel'>
               <span className='welcome-icon'>
                 <Layers size={32} />
@@ -910,9 +953,9 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   </a>
                 ))}
               {!loading && !localOnly && (
-                <a className='btn' href='/demo'>
+                <DemoLink className='btn'>
                   Try demo — no sign-in needed
-                </a>
+                </DemoLink>
               )}
               {!loading && user && (
                 <small>
@@ -1745,7 +1788,18 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                 </button>
               )}
               {modal === 'profile' && user && !localOnly && (
-                <a className='btn' href='/api/auth/signout?return_to=%2F'>
+                <a
+                  className='btn'
+                  href='/api/auth/signout?return_to=%2F'
+                  onClick={() => {
+                    try {
+                      window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+                      window.sessionStorage.removeItem(DEMO_SESSION_KEY);
+                    } catch {
+                      // Ignore unavailable browser storage.
+                    }
+                  }}
+                >
                   <LogOut size={16} />
                   Sign out
                 </a>
