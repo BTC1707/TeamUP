@@ -1192,7 +1192,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
             <>
               <div className='toolbar'>
                 <Tabs value={milestoneFilter} onValueChange={setMilestoneFilter}>
-                  <TabsList>
+                  <TabsList className='bg-[#dbd9fc] task-filter-tabs'>
                     <TabsTrigger value='all'>All milestones</TabsTrigger>
                     <TabsTrigger value='upcoming'>Upcoming</TabsTrigger>
                   </TabsList>
