@@ -1,5 +1,7 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import AssignmentChat from './assignment-chat';
 import ConnectAI from './connect-ai';
 import InviteLink from './invite-link';
@@ -70,6 +72,7 @@ import {
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { emptyProject, future, type Project, type Task, type Member } from '@/lib/model';
+import { workspacePathByView, workspaceViewByPath } from '@/lib/workspace-routes';
 const nav = [
   ['Overview', LayoutDashboard],
   ['Assignment chat', Sparkles],
@@ -87,6 +90,18 @@ const initials = (name: string) =>
     .slice(0, 2)
     .join('')
     .toUpperCase();
+function subscribeLocalAdminSession(onChange: () => void) {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener('storage', onChange);
+  return () => window.removeEventListener('storage', onChange);
+}
+function getLocalAdminSessionSnapshot() {
+  try {
+    return hasLocalAdminSession();
+  } catch {
+    return false;
+  }
+}
 const fmt = (d: string) =>
   new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 const uid = () => crypto.randomUUID();
@@ -142,7 +157,23 @@ function rememberLocalTutorialSeen() {
   }
 }
 
-export default function Workspace({ demoMode = false }: { demoMode?: boolean }) {
+export default function Workspace({
+  demoMode = false,
+  initialLocalAdmin = false,
+}: {
+  demoMode?: boolean;
+  initialLocalAdmin?: boolean;
+}) {
+  const localAdminSession = useSyncExternalStore(
+    subscribeLocalAdminSession,
+    getLocalAdminSessionSnapshot,
+    () => false,
+  );
+  const router = useRouter();
+  const pathname = usePathname();
+  const routeBase = demoMode ? '/demo' : '/workspace';
+  const routeSegment = pathname?.slice(routeBase.length).replace(/^\/+/, '') || 'overview';
+  const view = workspaceViewByPath[routeSegment as keyof typeof workspaceViewByPath] || 'Overview';
   const [tour, setTour] = useState<number | null>(null);
   const [tutorialPrompt, setTutorialPrompt] = useState(false);
   const tutorialPromptStarting = useRef(false);
@@ -162,11 +193,10 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
     tutorialSeen?: boolean;
   } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [startupNoticeReady, setStartupNoticeReady] = useState(false);
+  const [showStartupNotice, setShowStartupNotice] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState('Overview');
-  const [viewRestored, setViewRestored] = useState(false);
-  const [hasSavedView, setHasSavedView] = useState(false);
   const [modal, setModal] = useState('');
   const [filter, setFilter] = useState('active');
   const [milestoneFilter, setMilestoneFilter] = useState('all');
@@ -178,34 +208,28 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
   // Localhost + /demo: fully interactive in memory (no Cloudflare DB).
   const [localOnly, setLocalOnly] = useState(demoMode);
   const isDemo = !project.id;
+  const startupNoticeKey = demoMode
+    ? 'teamup.demo.workspaceOpened'
+    : 'teamup.workspace.opened';
+  const startupNoticeChecked = useRef(false);
 
   useEffect(() => {
+    if (startupNoticeChecked.current) return;
+    startupNoticeChecked.current = true;
+    const navigation = window.performance.getEntriesByType(
+      'navigation',
+    )[0] as PerformanceNavigationTiming | undefined;
+    const isReload = navigation?.type === 'reload';
+    let isFirstOpen = !isReload;
     try {
-      const demoAlreadyActive = window.sessionStorage.getItem(DEMO_SESSION_KEY) === '1';
-      if (demoMode && !demoAlreadyActive) {
-        window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
-        window.sessionStorage.setItem(DEMO_SESSION_KEY, '1');
-      } else {
-        const savedView = window.sessionStorage.getItem(WORKSPACE_VIEW_KEY);
-        if (savedView && nav.some(([name]) => name === savedView)) {
-          setView(savedView);
-          setHasSavedView(true);
-        }
-      }
+      isFirstOpen = window.sessionStorage.getItem(startupNoticeKey) !== '1' && !isReload;
+      window.sessionStorage.setItem(startupNoticeKey, '1');
     } catch {
-      // Keep the default view if browser storage is unavailable.
+      // Use the browser navigation type when storage is unavailable.
     }
-    setViewRestored(true);
-  }, []);
-
-  useEffect(() => {
-    if (!viewRestored) return;
-    try {
-      window.sessionStorage.setItem(WORKSPACE_VIEW_KEY, view);
-    } catch {
-      // The workspace still works if browser storage is unavailable.
-    }
-  }, [view, viewRestored]);
+    setShowStartupNotice(isFirstOpen);
+    setStartupNoticeReady(true);
+  }, [startupNoticeKey]);
 
   const today = future(0);
   const done = project.tasks.filter((t) => t.status === 'done').length;
@@ -280,7 +304,11 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
   }
 
   const isLocalAdmin =
-    user?.username === 'admin' || user?.email === 'admin@teamup.local' || user?.name === 'admin';
+    initialLocalAdmin ||
+    localAdminSession ||
+    user?.username === 'admin' ||
+    user?.email === 'admin@teamup.local' ||
+    user?.name === 'admin';
 
   async function api(url: string, options?: RequestInit) {
     // Only block API calls in the in-memory demo/sandbox — not for signed-in localhost admin.
@@ -329,7 +357,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
     if (isBrowserLocalHost()) {
       (async () => {
         setLoading(true);
-        const adminSession = hasLocalAdminSession();
+        const adminSession = getLocalAdminSessionSnapshot();
         try {
           const r = await fetch('/api/workspace');
           const data: any = await r.json();
@@ -410,8 +438,10 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
     ).catch(() => {});
     return () => controller.abort();
   }, [project, localOnly]);
-
-  if (!viewRestored) return null;
+  function setView(nextView: string) {
+    const path = workspacePathByView[nextView as keyof typeof workspacePathByView];
+    if (path) router.push(`${routeBase}/${path}`);
+  }
 
   function open(type: string, data: any = {}) {
     setDraft(data);
@@ -827,6 +857,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                 href={isLocalAdmin ? '/api/auth/signout?return_to=%2F' : '/'}
                 onClick={() => {
                   try {
+                    window.sessionStorage.removeItem(startupNoticeKey);
                     window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
                     window.sessionStorage.removeItem(DEMO_SESSION_KEY);
                   } catch {
@@ -907,19 +938,19 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                 }}
               >
                 <Plus size={16} />
-                {isDemo
-                  ? 'Create project'
-                  : view === 'Assignment chat'
-                    ? 'AI planner'
-                    : view === 'Milestones'
-                      ? 'Add milestone'
-                      : view === 'Team'
-                        ? 'Add member'
+                {view === 'Assignment chat'
+                  ? 'AI planner'
+                  : view === 'Milestones'
+                    ? 'Add milestone'
+                    : view === 'Team'
+                      ? 'Add member'
+                      : view === 'Overview' && isDemo && !loading
+                        ? 'Create project'
                         : 'Add task'}
               </button>
             )}
           </div>
-          {isDemo && (!loading || (viewRestored && !hasSavedView)) && (
+          {isDemo && startupNoticeReady && (!loading || showStartupNotice) && (
             <section className='welcome-panel'>
               <span className='welcome-icon'>
                 <Layers size={32} />
@@ -948,14 +979,14 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                     Create your first project
                   </button>
                 ) : (
-                  <a className='btn primary' href='/signin?return_to=%2Fworkspace'>
+                  <a className='btn primary' href='/signin?return_to=%2Fworkspace%2Foverview'>
                     Sign in to get started
                   </a>
                 ))}
               {!loading && !localOnly && (
-                <DemoLink className='btn'>
+                <Link className='btn' href='/demo/overview'>
                   Try demo — no sign-in needed
-                </DemoLink>
+                </Link>
               )}
               {!loading && user && (
                 <small>
@@ -971,7 +1002,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                 Reload
               </button>
               {!user && (
-                <a className='underline ml-3' href='/signin?return_to=%2Fworkspace'>
+                <a className='underline ml-3' href='/signin?return_to=%2Fworkspace%2Foverview'>
                   Sign in
                 </a>
               )}
@@ -1770,7 +1801,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                 </>
               )}
               {!user && (
-                <a className='btn primary' href='/signin?return_to=%2Fworkspace'>
+                <a className='btn primary' href='/signin?return_to=%2Fworkspace%2Foverview'>
                   Sign in
                 </a>
               )}
@@ -1793,6 +1824,7 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   href='/api/auth/signout?return_to=%2F'
                   onClick={() => {
                     try {
+                      window.sessionStorage.removeItem(startupNoticeKey);
                       window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
                       window.sessionStorage.removeItem(DEMO_SESSION_KEY);
                     } catch {

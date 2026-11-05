@@ -7,7 +7,7 @@
  * 1. User enters first name, last name, username, email, password (twice)
  * 2. Browser POSTs to /api/auth/signup
  * 3. Server rejects duplicate email/username, otherwise stores a password hash
- * 4. Server sets a session cookie; browser redirects to /workspace
+ * 4. Server sets a session cookie; browser redirects to /workspace/overview
  */
 
 import { FormEvent, useState } from 'react';

@@ -1,6 +1,6 @@
 /**
  * Route: `/` → marketing landing page.
- * The interactive app lives at `/workspace` (see app/workspace/page.tsx).
+ * The interactive app lives under `/workspace/[section]` (see app/workspace/[section]/page.tsx).
  */
 import Landing from './landing';
 
