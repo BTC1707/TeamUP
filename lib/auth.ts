@@ -299,24 +299,24 @@ export function clearSessionCookieHeader(secure: boolean) {
 }
 
 export function safeReturnPath(value: string | null | undefined) {
-  if (!value?.startsWith('/') || value.startsWith('//')) return '/workspace';
+  if (!value?.startsWith('/') || value.startsWith('//')) return '/workspace/overview';
   try {
     const url = new URL(value, 'https://app.local');
-    if (url.origin !== 'https://app.local') return '/workspace';
+    if (url.origin !== 'https://app.local') return '/workspace/overview';
     if (
       url.pathname === '/signin' ||
       url.pathname === '/signup' ||
       url.pathname.startsWith('/api/auth')
     ) {
-      return '/workspace';
+      return '/workspace/overview';
     }
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
-    return '/workspace';
+    return '/workspace/overview';
   }
 }
 
-export function signInPath(returnTo = '/workspace') {
+export function signInPath(returnTo = '/workspace/overview') {
   return `/signin?return_to=${encodeURIComponent(safeReturnPath(returnTo))}`;
 }
 

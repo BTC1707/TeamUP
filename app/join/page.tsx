@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 export default function Join() {
   const [token, setToken] = useState('');
   const [project, setProject] = useState<{
@@ -73,13 +74,18 @@ export default function Join() {
               disabled={busy}
               onClick={async () => {
                 if (project.alreadyMember) {
-                  window.location.assign('/?project=' + encodeURIComponent(project.projectId));
+                  window.location.assign(
+                    '/workspace/overview?project=' + encodeURIComponent(project.projectId),
+                  );
                   return;
                 }
                 setBusy(true);
                 try {
                   const d = await request('accept', token);
-                  if (d) window.location.assign('/?project=' + encodeURIComponent(d.projectId));
+                  if (d)
+                    window.location.assign(
+                      '/workspace/overview?project=' + encodeURIComponent(d.projectId),
+                    );
                 } catch (e) {
                   setError((e as Error).message);
                 } finally {
@@ -91,9 +97,9 @@ export default function Join() {
             </button>
           </>
         ) : null}
-        <a className='btn subtle' href='/workspace'>
+        <Link className='btn subtle' href='/workspace/overview'>
           Back to workspace
-        </a>
+        </Link>
       </section>
     </main>
   );

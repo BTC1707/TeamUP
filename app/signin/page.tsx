@@ -40,6 +40,11 @@ export default function SignInPage() {
         password,
         returnTo: readReturnToParam(),
       });
+      try {
+        window.sessionStorage.removeItem('teamup.workspace.opened');
+      } catch {
+        // Keep sign-in working if browser storage is unavailable.
+      }
       window.location.assign(returnTo || DEFAULT_AFTER_AUTH_PATH);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in.');

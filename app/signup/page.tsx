@@ -7,7 +7,7 @@
  * 1. User enters first name, last name, username, email, password (twice)
  * 2. Browser POSTs to /api/auth/signup
  * 3. Server rejects duplicate email/username, otherwise stores a password hash
- * 4. Server sets a session cookie; browser redirects to /workspace
+ * 4. Server sets a session cookie; browser redirects to /workspace/overview
  */
 
 import { FormEvent, useState } from 'react';
@@ -47,6 +47,11 @@ export default function SignUpPage() {
         confirmPassword,
         returnTo: readReturnToParam(),
       });
+      try {
+        window.sessionStorage.removeItem('teamup.workspace.opened');
+      } catch {
+        // Keep account creation working if browser storage is unavailable.
+      }
       window.location.assign(returnTo || DEFAULT_AFTER_AUTH_PATH);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to create your account.');

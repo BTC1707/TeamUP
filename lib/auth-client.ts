@@ -11,7 +11,7 @@ import {
   rememberLocalAdminSession,
 } from './local-dev-account';
 
-export const DEFAULT_AFTER_AUTH_PATH = '/workspace';
+export const DEFAULT_AFTER_AUTH_PATH = '/workspace/overview';
 
 type AuthResult = {
   returnTo: string;

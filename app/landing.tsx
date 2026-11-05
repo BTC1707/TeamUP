@@ -11,8 +11,8 @@
  *   /           → this landing page
  *   /signup     → create account (working)
  *   /signin     → sign in (working)
- *   /workspace  → main app after auth
- *   /demo       → try the app without an account
+ *   /workspace/overview → main app after auth
+ *   /demo/overview      → try the app without an account
  */
 
 import { LandingAbout } from './landing/about';
