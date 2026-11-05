@@ -12,11 +12,12 @@ export default function DemoLink({
   return (
     <a
       className={className}
-      href='/demo'
+      href='/demo/overview'
       onClick={() => {
         try {
           window.sessionStorage.removeItem('teamup.workspace.view');
           window.sessionStorage.removeItem('teamup.demo.sessionActive');
+          window.sessionStorage.removeItem('teamup.demo.workspaceOpened');
         } catch {
           // The demo link still works if browser storage is unavailable.
         }

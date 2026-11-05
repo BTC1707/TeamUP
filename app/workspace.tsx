@@ -6,7 +6,6 @@ import AssignmentChat from './assignment-chat';
 import ConnectAI from './connect-ai';
 import InviteLink from './invite-link';
 import Tutorial from './tutorial';
-import DemoLink from './demo-link';
 import { practiceProject, demoUser } from '@/lib/demo';
 import {
   clearLocalAdminSession,
