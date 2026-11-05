@@ -48,7 +48,8 @@ export default function SignUpPage() {
         returnTo: readReturnToParam(),
       });
       try {
-        window.sessionStorage.removeItem('teamup.workspace.opened');
+        window.sessionStorage.removeItem('teamup.workspace.view');
+        window.sessionStorage.removeItem('teamup.demo.sessionActive');
       } catch {
         // Keep account creation working if browser storage is unavailable.
       }

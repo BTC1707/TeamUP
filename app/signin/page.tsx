@@ -41,7 +41,8 @@ export default function SignInPage() {
         returnTo: readReturnToParam(),
       });
       try {
-        window.sessionStorage.removeItem('teamup.workspace.opened');
+        window.sessionStorage.removeItem('teamup.workspace.view');
+        window.sessionStorage.removeItem('teamup.demo.sessionActive');
       } catch {
         // Keep sign-in working if browser storage is unavailable.
       }

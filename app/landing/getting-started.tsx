@@ -1,4 +1,5 @@
 import { LANDING_ROUTES } from './routes';
+import DemoLink from '../demo-link';
 
 /** A quick introduction to TeamUP for first-time visitors. */
 export function LandingGettingStarted() {
@@ -32,7 +33,7 @@ export function LandingGettingStarted() {
 
       <div className='landing-start-cta'>
         <a className='btn primary' href={LANDING_ROUTES.signUp}>Get started</a>
-        <a className='btn' href={LANDING_ROUTES.demo}>Explore the demo</a>
+        <DemoLink className='btn'>Explore the demo</DemoLink>
       </div>
     </section>
   );

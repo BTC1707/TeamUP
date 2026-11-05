@@ -6,6 +6,7 @@ import AssignmentChat from './assignment-chat';
 import ConnectAI from './connect-ai';
 import InviteLink from './invite-link';
 import Tutorial from './tutorial';
+import DemoLink from './demo-link';
 import { practiceProject, demoUser } from '@/lib/demo';
 import {
   clearLocalAdminSession,
@@ -137,6 +138,8 @@ function isBrowserLocalHost() {
 }
 
 const TUTORIAL_SEEN_KEY = 'teamup.tutorialSeen';
+const WORKSPACE_VIEW_KEY = 'teamup.workspace.view';
+const DEMO_SESSION_KEY = 'teamup.demo.sessionActive';
 
 function hasLocalTutorialSeen() {
   try {
@@ -855,6 +858,8 @@ export default function Workspace({
                 onClick={() => {
                   try {
                     window.sessionStorage.removeItem(startupNoticeKey);
+                    window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+                    window.sessionStorage.removeItem(DEMO_SESSION_KEY);
                   } catch {
                     // Ignore unavailable browser storage.
                   }
@@ -1261,7 +1266,7 @@ export default function Workspace({
             <>
               <div className='toolbar'>
                 <Tabs value={milestoneFilter} onValueChange={setMilestoneFilter}>
-                  <TabsList>
+                  <TabsList className='bg-[#dbd9fc] task-filter-tabs'>
                     <TabsTrigger value='all'>All milestones</TabsTrigger>
                     <TabsTrigger value='upcoming'>Upcoming</TabsTrigger>
                   </TabsList>
@@ -1820,6 +1825,8 @@ export default function Workspace({
                   onClick={() => {
                     try {
                       window.sessionStorage.removeItem(startupNoticeKey);
+                      window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+                      window.sessionStorage.removeItem(DEMO_SESSION_KEY);
                     } catch {
                       // Ignore unavailable browser storage.
                     }

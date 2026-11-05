@@ -1,4 +1,5 @@
 import { LANDING_ROUTES } from './routes';
+import DemoLink from '../demo-link';
 
 /** Simple footer links (same destinations as the hero CTAs). */
 export function LandingFooter() {
@@ -8,7 +9,7 @@ export function LandingFooter() {
       <span aria-hidden='true'>·</span>
       <a href={LANDING_ROUTES.signIn}>Sign in</a>
       <span aria-hidden='true'>·</span>
-      <a href={LANDING_ROUTES.demo}>Demo</a>
+      <DemoLink>Demo</DemoLink>
     </footer>
   );
 }
