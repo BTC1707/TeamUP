@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { LANDING_ROUTES } from './routes';
+import DemoLink from '../demo-link';
 
 /** First screen: brand, headline, and main buttons. */
 export function LandingHero() {
@@ -30,9 +31,9 @@ export function LandingHero() {
             Sign in
           </a>
 
-          <a className='btn subtle' href={LANDING_ROUTES.demo}>
+          <DemoLink className='btn subtle'>
             Try demo
-          </a>
+          </DemoLink>
         </div>
       </div>
 
