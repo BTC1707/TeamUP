@@ -12,6 +12,7 @@ export type AvailabilityRange = {
 };
 
 export type AvailabilityProposal = {
+  type: 'availability';
   id: string;
   summary: string;
   slots: string[];
@@ -205,6 +206,7 @@ export function rangesToProposal(
   const labels = slots.map((slot) => formatSlotLabel(slot, timeZone));
   return {
     proposal: {
+      type: 'availability',
       id: crypto.randomUUID(),
       summary: summary.trim() || 'Update your availability',
       slots,

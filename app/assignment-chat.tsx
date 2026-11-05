@@ -1,14 +1,136 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles, Send, FileText, CheckSquare, MessageCircle } from 'lucide-react';
-import type { Project } from '@/lib/model';
+import type { Milestone, Project, Task } from '@/lib/model';
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string };
-type PendingProposal = {
-  id: string;
-  summary: string;
-  slots: string[];
+type TaskStatusChange = {
+  taskId: string;
+  title: string;
+  from: Task['status'];
+  to: Task['status'];
+};
+type TaskEditChange = {
+  taskId: string;
+  before: Task;
+  after: Task;
   labels: string[];
+};
+type MilestoneEditChange = {
+  milestoneId: string;
+  before: Milestone;
+  after: Milestone;
+  labels: string[];
+};
+type PendingProposal =
+  | {
+      type: 'availability';
+      id: string;
+      summary: string;
+      slots: string[];
+      labels: string[];
+    }
+  | {
+      type: 'tasks';
+      id: string;
+      summary: string;
+      tasks: Task[];
+      labels: string[];
+    }
+  | {
+      type: 'milestones';
+      id: string;
+      summary: string;
+      milestones: Milestone[];
+      labels: string[];
+    }
+  | {
+      type: 'taskStatus';
+      id: string;
+      summary: string;
+      changes: TaskStatusChange[];
+      labels: string[];
+    }
+  | {
+      type: 'taskEdit';
+      id: string;
+      summary: string;
+      changes: TaskEditChange[];
+      labels: string[];
+    }
+  | {
+      type: 'milestoneEdit';
+      id: string;
+      summary: string;
+      changes: MilestoneEditChange[];
+      labels: string[];
+    }
+  | {
+      type: 'brief';
+      id: string;
+      summary: string;
+      description: string;
+      labels: string[];
+    }
+  | {
+      type: 'reminders';
+      id: string;
+      summary: string;
+      reminderHours: number;
+      labels: string[];
+    };
+
+type ConfirmAction =
+  | 'confirmAvailability'
+  | 'confirmTasks'
+  | 'confirmMilestones'
+  | 'confirmTaskStatus'
+  | 'confirmTaskEdit'
+  | 'confirmMilestoneEdit'
+  | 'confirmBrief'
+  | 'confirmReminders';
+
+type CancelAction =
+  | 'cancelAvailability'
+  | 'cancelTasks'
+  | 'cancelMilestones'
+  | 'cancelTaskStatus'
+  | 'cancelTaskEdit'
+  | 'cancelMilestoneEdit'
+  | 'cancelBrief'
+  | 'cancelReminders';
+
+const CONFIRM_LABEL: Record<PendingProposal['type'], string> = {
+  availability: 'Confirm availability',
+  tasks: 'Confirm tasks',
+  milestones: 'Confirm milestones',
+  taskStatus: 'Confirm status',
+  taskEdit: 'Confirm edits',
+  milestoneEdit: 'Confirm edits',
+  brief: 'Confirm brief',
+  reminders: 'Confirm reminders',
+};
+
+const CONFIRM_ACTION: Record<PendingProposal['type'], ConfirmAction> = {
+  availability: 'confirmAvailability',
+  tasks: 'confirmTasks',
+  milestones: 'confirmMilestones',
+  taskStatus: 'confirmTaskStatus',
+  taskEdit: 'confirmTaskEdit',
+  milestoneEdit: 'confirmMilestoneEdit',
+  brief: 'confirmBrief',
+  reminders: 'confirmReminders',
+};
+
+const CANCEL_ACTION: Record<PendingProposal['type'], CancelAction> = {
+  availability: 'cancelAvailability',
+  tasks: 'cancelTasks',
+  milestones: 'cancelMilestones',
+  taskStatus: 'cancelTaskStatus',
+  taskEdit: 'cancelTaskEdit',
+  milestoneEdit: 'cancelMilestoneEdit',
+  brief: 'cancelBrief',
+  reminders: 'cancelReminders',
 };
 
 export default function AssignmentChat({
@@ -98,7 +220,7 @@ export default function AssignmentChat({
       const data: any = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to get an answer. Please try again.');
       setMessages(data.messages);
-      setPendingProposal(data.pendingProposal || null);
+      setPendingProposal(normalizePending(data.pendingProposal));
       setQuestion('');
       requestId.current = null;
     } catch (e) {
@@ -108,8 +230,11 @@ export default function AssignmentChat({
     }
   }
 
-  async function resolveProposal(action: 'confirmAvailability' | 'cancelAvailability') {
+  async function resolveProposal(confirm: boolean) {
     if (busy || !pendingProposal) return;
+    const action = confirm
+      ? CONFIRM_ACTION[pendingProposal.type]
+      : CANCEL_ACTION[pendingProposal.type];
     setBusy(true);
     setError('');
     try {
@@ -120,14 +245,11 @@ export default function AssignmentChat({
           project: project.id,
           action,
           timeZone,
-          proposal: {
-            slots: pendingProposal.slots,
-            summary: pendingProposal.summary,
-          },
+          proposal: proposalPayload(pendingProposal),
         }),
       });
       const data: any = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to update availability.');
+      if (!response.ok) throw new Error(data.error || 'Unable to apply that change.');
       setMessages(data.messages);
       setPendingProposal(null);
       if (data.project && onProjectUpdate) onProjectUpdate(data.project);
@@ -164,14 +286,14 @@ export default function AssignmentChat({
               <Sparkles size={30} />
               <h2>What would you like to figure out?</h2>
               <p>
-                Ask about the requirements, set your availability in plain language, or work out
-                your next step.
+                Manage the project in plain language — tasks, milestones, brief, reminders, and
+                availability.
               </p>
               <div className='chat-prompts'>
                 {[
-                  'What are the main deliverables for this assignment?',
-                  'I’m free Tuesday from 10am to 2pm.',
-                  'What should our group work on next?',
+                  'Move the intro to me, due Friday.',
+                  'Shorten our assignment brief.',
+                  'Remind us 48 hours before deadlines.',
                 ].map((text) => (
                   <button
                     key={text}
@@ -197,15 +319,15 @@ export default function AssignmentChat({
                       type='button'
                       className='btn primary'
                       disabled={busy}
-                      onClick={() => resolveProposal('confirmAvailability')}
+                      onClick={() => resolveProposal(true)}
                     >
-                      Confirm availability
+                      {CONFIRM_LABEL[pendingProposal.type]}
                     </button>
                     <button
                       type='button'
                       className='btn'
                       disabled={busy}
-                      onClick={() => resolveProposal('cancelAvailability')}
+                      onClick={() => resolveProposal(false)}
                     >
                       Cancel
                     </button>
@@ -241,7 +363,7 @@ export default function AssignmentChat({
           </label>
           <textarea
             id='assignment-question'
-            placeholder='Ask about your assignment or say when you’re free…'
+            placeholder='Ask a question or tell me what to change on the project…'
             maxLength={6000}
             value={question}
             disabled={busy}
@@ -267,8 +389,9 @@ export default function AssignmentChat({
           </button>
         </form>
         <p className='chat-footnote'>
-          Your chat is saved privately to your account. Try “I’m free Tuesday 10am–2pm” to propose
-          availability. Check important details against the assignment brief.
+          Your chat is saved privately to your account. Changes to tasks, milestones, brief, and
+          reminders ask for confirmation first. Check important details against the assignment
+          brief.
         </p>
       </section>
       <aside className='stack'>
@@ -288,9 +411,8 @@ export default function AssignmentChat({
             </button>
             <small>
               AI can reference your brief, tasks, milestones, and up to 3 recent TXT, Markdown, or
-              CSV files under 100 KB each. For PDFs and other formats, paste the relevant text into
-              your brief or question. You can also describe your availability in chat for
-              confirmation.
+              CSV files under 100 KB each. You can also ask it to edit tasks, milestones, the brief,
+              reminders, and availability — with confirmation before anything is saved.
             </small>
           </div>
         </section>
@@ -305,4 +427,114 @@ export default function AssignmentChat({
       </aside>
     </div>
   );
+}
+
+function proposalPayload(proposal: PendingProposal) {
+  switch (proposal.type) {
+    case 'tasks':
+      return { type: 'tasks' as const, tasks: proposal.tasks, summary: proposal.summary };
+    case 'milestones':
+      return {
+        type: 'milestones' as const,
+        milestones: proposal.milestones,
+        summary: proposal.summary,
+      };
+    case 'taskStatus':
+    case 'taskEdit':
+    case 'milestoneEdit':
+      return { type: proposal.type, changes: proposal.changes, summary: proposal.summary };
+    case 'brief':
+      return {
+        type: 'brief' as const,
+        description: proposal.description,
+        summary: proposal.summary,
+      };
+    case 'reminders':
+      return {
+        type: 'reminders' as const,
+        reminderHours: proposal.reminderHours,
+        summary: proposal.summary,
+      };
+    default:
+      return {
+        type: 'availability' as const,
+        slots: proposal.slots,
+        summary: proposal.summary,
+      };
+  }
+}
+
+function normalizePending(raw: unknown): PendingProposal | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const value = raw as Record<string, unknown>;
+  const id = typeof value.id === 'string' ? value.id : crypto.randomUUID();
+  const summary = typeof value.summary === 'string' ? value.summary : 'Proposed change';
+  const labels = Array.isArray(value.labels)
+    ? value.labels.filter((l): l is string => typeof l === 'string')
+    : [];
+
+  if (value.type === 'tasks' && Array.isArray(value.tasks)) {
+    return { type: 'tasks', id, summary, tasks: value.tasks as Task[], labels };
+  }
+  if (value.type === 'milestones' && Array.isArray(value.milestones)) {
+    return {
+      type: 'milestones',
+      id,
+      summary,
+      milestones: value.milestones as Milestone[],
+      labels,
+    };
+  }
+  if (value.type === 'taskStatus' && Array.isArray(value.changes)) {
+    return {
+      type: 'taskStatus',
+      id,
+      summary,
+      changes: value.changes as TaskStatusChange[],
+      labels,
+    };
+  }
+  if (value.type === 'taskEdit' && Array.isArray(value.changes)) {
+    return {
+      type: 'taskEdit',
+      id,
+      summary,
+      changes: value.changes as TaskEditChange[],
+      labels,
+    };
+  }
+  if (value.type === 'milestoneEdit' && Array.isArray(value.changes)) {
+    return {
+      type: 'milestoneEdit',
+      id,
+      summary,
+      changes: value.changes as MilestoneEditChange[],
+      labels,
+    };
+  }
+  if (value.type === 'brief' && typeof value.description === 'string') {
+    return { type: 'brief', id, summary, description: value.description, labels };
+  }
+  if (value.type === 'reminders' && typeof value.reminderHours === 'number') {
+    return {
+      type: 'reminders',
+      id,
+      summary,
+      reminderHours: value.reminderHours,
+      labels,
+    };
+  }
+  if (
+    (value.type === 'availability' || (!value.type && Array.isArray(value.slots))) &&
+    Array.isArray(value.slots)
+  ) {
+    return {
+      type: 'availability',
+      id,
+      summary,
+      slots: value.slots as string[],
+      labels,
+    };
+  }
+  return null;
 }
