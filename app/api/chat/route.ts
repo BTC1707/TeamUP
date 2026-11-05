@@ -17,7 +17,10 @@ import {
 } from '@/lib/availability-slots';
 import {
   draftsToProposal,
+  refineTaskProposal,
+  taskToDraft,
   validateProposedTasks,
+  type TaskDraft,
   type TaskProposal,
 } from '@/lib/task-proposals';
 import {
@@ -200,10 +203,23 @@ function proposalPreview(summary: string, labels: string[], intro: string) {
 }
 
 function isBareConfirmOrCancel(question: string) {
-  const text = question.trim().toLowerCase().replace(/[.!]+$/g, '');
-  return /^(y|yes|yeah|yep|yup|ok|okay|sure|confirm|apply|do it|looks good|that'?s right|sounds good|go ahead|please do|lgtm|n|no|nope|cancel|never ?mind|don'?t|discard|scratch that)(\s+(please|thanks|thank you))?$/.test(
-    text,
-  );
+  const text = question
+    .trim()
+    .toLowerCase()
+    .replace(/[.!]+$/g, '')
+    .replace(/\s+/g, ' ');
+  if (!text || text.length > 80) return false;
+  if (
+    /^(n|no|nope|cancel|never ?mind|don'?t|discard|scratch that)\b/.test(text) &&
+    !/\b(yes|confirm|apply)\b/.test(text)
+  )
+    return true;
+  if (
+    /^(y|yes|yeah|yep|yup|ok|okay|sure|confirm|apply|do it|lgtm)\b/.test(text) ||
+    /^(looks good|that'?s right|thats right|sounds good|go ahead|please do)\b/.test(text)
+  )
+    return !/\b(don'?t|do not|not yet|wrong|no)\b/.test(text);
+  return false;
 }
 
 function looksLikeProjectMutation(question: string) {
@@ -218,6 +234,56 @@ function looksLikeProjectMutation(question: string) {
     /\b(shorten|update|paste|append)\b[\s\S]{0,40}\bbrief\b/.test(q) ||
     /\bremind(ers?)?\b[\s\S]{0,40}\b(hour|day|before)\b/.test(q)
   );
+}
+
+function draftsFromRefineIntent(
+  intent: Awaited<ReturnType<typeof classifyChatIntent>>,
+  pending: TaskProposal,
+  project: Project,
+): TaskDraft[] {
+  const base = pending.tasks[0];
+  const fallback = taskToDraft(base, project.members);
+
+  if (intent.intent === 'tasks' && intent.tasks?.[0]) {
+    const t = intent.tasks[0];
+    return [
+      {
+        title: (t.title || fallback.title).trim() || fallback.title,
+        description:
+          typeof t.description === 'string' ? t.description : fallback.description || '',
+        assigneeName:
+          typeof t.assigneeName === 'string' ? t.assigneeName : fallback.assigneeName || '',
+        due: typeof t.due === 'string' && t.due.trim() ? t.due : fallback.due,
+        milestoneTitle:
+          typeof t.milestoneTitle === 'string' ? t.milestoneTitle : undefined,
+      },
+    ];
+  }
+
+  if (intent.intent === 'taskEdit' && intent.taskEdits?.[0]) {
+    const e = intent.taskEdits[0];
+    return [
+      {
+        title: (e.title || fallback.title).trim() || fallback.title,
+        description:
+          typeof e.description === 'string' ? e.description : fallback.description || '',
+        assigneeName: e.clearAssignee
+          ? 'unassigned'
+          : typeof e.assigneeName === 'string'
+            ? e.assigneeName
+            : fallback.assigneeName || '',
+        due: typeof e.due === 'string' && e.due.trim() ? e.due : fallback.due,
+        milestoneTitle: e.clearMilestone
+          ? 'none'
+          : typeof e.milestoneTitle === 'string'
+            ? e.milestoneTitle
+            : undefined,
+      },
+    ];
+  }
+
+  // Ambiguous classify — keep the draft and let refineTaskProposal no-op / clarify upstream
+  return [fallback];
 }
 
 type ChatAction =
@@ -271,6 +337,18 @@ export async function POST(req: Request) {
         changes?: unknown;
         description?: string;
         reminderHours?: number;
+      };
+      pendingProposal?: {
+        type?: PendingProposal['type'];
+        summary?: string;
+        tasks?: Task[];
+        milestones?: Milestone[];
+        slots?: string[];
+        changes?: unknown;
+        description?: string;
+        reminderHours?: number;
+        id?: string;
+        labels?: string[];
       };
     };
 
@@ -501,6 +579,90 @@ export async function POST(req: Request) {
     let answer = '';
     let pendingProposal: PendingProposal | null = null;
 
+    // Client still has a create-task proposal open — treat follow-ups as refinements,
+    // not edits to an existing project task (it isn't saved yet).
+    const refiningTasks =
+      body.pendingProposal?.type === 'tasks' &&
+      Array.isArray(body.pendingProposal.tasks) &&
+      body.pendingProposal.tasks.length > 0
+        ? ({
+            type: 'tasks' as const,
+            id:
+              typeof body.pendingProposal.id === 'string'
+                ? body.pendingProposal.id
+                : crypto.randomUUID(),
+            summary:
+              typeof body.pendingProposal.summary === 'string'
+                ? body.pendingProposal.summary
+                : 'Add tasks',
+            tasks: body.pendingProposal.tasks,
+            labels: Array.isArray(body.pendingProposal.labels)
+              ? body.pendingProposal.labels.filter((l): l is string => typeof l === 'string')
+              : [],
+          } satisfies TaskProposal)
+        : null;
+
+    if (refiningTasks && isBareConfirmOrCancel(question)) {
+      answer =
+        'Use the Confirm or Cancel buttons under the proposal (or reply yes/cancel). I only save after you confirm.';
+    } else if (refiningTasks) {
+      const base = refiningTasks.tasks[0];
+      const refinePrompt = [
+        'The user is refining a PENDING NEW task that is NOT in the project yet.',
+        'Do NOT use taskEdit or taskStatus. Use intent=tasks with one full updated task.',
+        `Current draft JSON: ${JSON.stringify({
+          title: base.title,
+          description: base.description || '',
+          due: base.due,
+          assigneeName:
+            project.members.find((m) => m.id === base.assignee)?.name ||
+            (base.assignee ? 'me' : ''),
+          milestoneTitle:
+            project.milestones.find((m) => m.id === base.milestone)?.title || '',
+        })}`,
+        `User refinement: ${question}`,
+        'Merge their changes into the draft. Keep prior fields they did not change. If they say assign to me, set assigneeName to "me".',
+      ].join('\n');
+      const intent = await classifyChatIntent(
+        refinePrompt,
+        timeZone,
+        windowDates(timeZone),
+        project,
+      );
+      if (
+        intent.intent === 'clarify' &&
+        !intent.tasks?.length &&
+        !intent.taskEdits?.length
+      ) {
+        pendingProposal = refiningTasks;
+        answer =
+          intent.clarifyQuestion?.trim() ||
+          'How should I update this draft? For example “assign it to me, due the 5th.”';
+      } else {
+        const drafts = draftsFromRefineIntent(intent, refiningTasks, project);
+        const { proposal, error, clarify } = refineTaskProposal(
+          refiningTasks,
+          drafts,
+          project,
+          intent.summary || refiningTasks.summary,
+          u.userId,
+        );
+        if (clarify) {
+          pendingProposal = refiningTasks;
+          answer = clarify;
+        } else if (!proposal) {
+          pendingProposal = refiningTasks;
+          answer = error || 'I couldn’t update that draft. Try “assign it to me, due the 5th.”';
+        } else {
+          pendingProposal = proposal;
+          answer = proposalPreview(
+            proposal.summary,
+            proposal.labels,
+            'Updated draft — here’s what I’ll add:',
+          );
+        }
+      }
+    } else {
     let intent = isBareConfirmOrCancel(question)
       ? ({
           intent: 'clarify' as const,
@@ -683,6 +845,7 @@ export async function POST(req: Request) {
       ];
       answer = await complete(messages);
     }
+    } // end non-refining branch
 
     const now = new Date().toISOString();
     const insert = (id: string, role: string, text: string, pos: number) =>

@@ -203,9 +203,9 @@ export default function AssignmentChat({
     }
     if (busy || !question.trim() || loading) return;
 
-    // Pending proposals live on the client — verbal yes/no must hit confirm/cancel,
-    // not the free-form chat path (which will invent success or deny write access).
-    if (pendingProposal) {
+    // Pending proposals live on the client — verbal yes/no must hit confirm/cancel.
+    const activeProposal = pendingProposal;
+    if (activeProposal) {
       const decision = proposalDecision(question);
       if (decision === 'confirm') {
         setQuestion('');
@@ -221,7 +221,8 @@ export default function AssignmentChat({
 
     setBusy(true);
     setError('');
-    setPendingProposal(null);
+    // Keep the pending proposal while refining (assign/due tweaks). Only clear for a fresh ask.
+    if (!activeProposal) setPendingProposal(null);
     requestId.current ??= crypto.randomUUID();
     try {
       const response = await fetch('/api/chat', {
@@ -232,6 +233,7 @@ export default function AssignmentChat({
           question,
           requestId: requestId.current,
           timeZone,
+          pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
         }),
       });
       const data: any = await response.json();
@@ -451,14 +453,25 @@ export default function AssignmentChat({
 
 /** Map short confirm/cancel replies onto the pending proposal actions. */
 function proposalDecision(raw: string): 'confirm' | 'cancel' | null {
-  const text = raw.trim().toLowerCase().replace(/[.!]+$/g, '');
+  const text = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[.!]+$/g, '')
+    .replace(/\s+/g, ' ');
+  if (!text || text.length > 80) return null;
   if (
-    /^(y|yes|yeah|yep|yup|ok|okay|sure|confirm|apply|do it|looks good|that'?s right|sounds good|go ahead|please do|lgtm)(\s+(please|thanks|thank you))?$/.test(
-      text,
-    )
+    /^(n|no|nope|cancel|never ?mind|don'?t|discard|scratch that)\b/.test(text) &&
+    !/\b(yes|confirm|apply)\b/.test(text)
   )
+    return 'cancel';
+  // "yes", "yes thats right", "ok apply", "that's right", etc.
+  if (
+    /^(y|yes|yeah|yep|yup|ok|okay|sure|confirm|apply|do it|lgtm)\b/.test(text) ||
+    /^(looks good|that'?s right|thats right|sounds good|go ahead|please do)\b/.test(text)
+  ) {
+    if (/\b(don'?t|do not|not yet|wrong|no)\b/.test(text)) return null;
     return 'confirm';
-  if (/^(n|no|nope|cancel|never ?mind|don'?t|discard|scratch that)$/.test(text)) return 'cancel';
+  }
   return null;
 }
 

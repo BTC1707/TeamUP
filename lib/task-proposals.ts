@@ -86,7 +86,9 @@ export function formatTaskProposalLabel(task: Task, members: Member[]) {
     month: 'short',
     day: 'numeric',
   });
-  return `${task.title} — ${who} — ${due}`;
+  const desc = (task.description || '').trim();
+  const descBit = desc ? ` — “${desc.length > 60 ? desc.slice(0, 57) + '…' : desc}”` : '';
+  return `${task.title} — ${who} — ${due}${descBit}`;
 }
 
 export function draftsToProposal(
@@ -166,6 +168,42 @@ export function draftsToProposal(
     },
     error: null,
     clarify: null,
+  };
+}
+
+/** Rebuild a pending create-proposal while keeping stable task/proposal ids. */
+export function refineTaskProposal(
+  proposal: TaskProposal,
+  drafts: TaskDraft[],
+  project: Project,
+  summary: string,
+  currentUserId?: string,
+) {
+  const built = draftsToProposal(drafts, project, summary, currentUserId);
+  if (!built.proposal) return built;
+  const tasks = built.proposal.tasks.map((task, i) => ({
+    ...task,
+    id: proposal.tasks[i]?.id || task.id,
+  }));
+  return {
+    proposal: {
+      ...built.proposal,
+      id: proposal.id,
+      type: 'tasks' as const,
+      tasks,
+      labels: tasks.map((t) => formatTaskProposalLabel(t, project.members)),
+    },
+    error: null,
+    clarify: null,
+  };
+}
+
+export function taskToDraft(task: Task, members: Member[]): TaskDraft {
+  return {
+    title: task.title,
+    description: task.description || '',
+    assigneeName: members.find((m) => m.id === task.assignee)?.name || (task.assignee ? undefined : ''),
+    due: task.due,
   };
 }
 
