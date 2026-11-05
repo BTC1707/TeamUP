@@ -202,6 +202,23 @@ export default function AssignmentChat({
       return;
     }
     if (busy || !question.trim() || loading) return;
+
+    // Pending proposals live on the client — verbal yes/no must hit confirm/cancel,
+    // not the free-form chat path (which will invent success or deny write access).
+    if (pendingProposal) {
+      const decision = proposalDecision(question);
+      if (decision === 'confirm') {
+        setQuestion('');
+        await resolveProposal(true);
+        return;
+      }
+      if (decision === 'cancel') {
+        setQuestion('');
+        await resolveProposal(false);
+        return;
+      }
+    }
+
     setBusy(true);
     setError('');
     setPendingProposal(null);
@@ -331,6 +348,9 @@ export default function AssignmentChat({
                     >
                       Cancel
                     </button>
+                    <p className='chat-proposal-hint'>
+                      Or reply “yes” / “apply” to confirm, or “cancel” to discard.
+                    </p>
                   </div>
                 )}
               </article>
@@ -427,6 +447,19 @@ export default function AssignmentChat({
       </aside>
     </div>
   );
+}
+
+/** Map short confirm/cancel replies onto the pending proposal actions. */
+function proposalDecision(raw: string): 'confirm' | 'cancel' | null {
+  const text = raw.trim().toLowerCase().replace(/[.!]+$/g, '');
+  if (
+    /^(y|yes|yeah|yep|yup|ok|okay|sure|confirm|apply|do it|looks good|that'?s right|sounds good|go ahead|please do|lgtm)(\s+(please|thanks|thank you))?$/.test(
+      text,
+    )
+  )
+    return 'confirm';
+  if (/^(n|no|nope|cancel|never ?mind|don'?t|discard|scratch that)$/.test(text)) return 'cancel';
+  return null;
 }
 
 function proposalPayload(proposal: PendingProposal) {

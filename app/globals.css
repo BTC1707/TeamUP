@@ -968,9 +968,16 @@ h3 {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+  align-items: center;
 }
 .chat-proposal-actions .btn {
   min-height: 36px;
+}
+.chat-proposal-hint {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 0.85rem;
+  color: #6b6585;
 }
 .chat-composer {
   margin: 0 20px;
