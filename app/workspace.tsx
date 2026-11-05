@@ -1153,6 +1153,10 @@ export default function Workspace({ demoMode = false }: { demoMode?: boolean }) 
                   setRequirements(project.description);
                 }
               }}
+              onProjectUpdate={(next) => {
+                setProject(next);
+                setProjects((prev) => prev.map((p) => (p.id === next.id ? next : p)));
+              }}
             />
           )}
           {!isDemo && view === 'My tasks' && (

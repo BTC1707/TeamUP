@@ -2,33 +2,50 @@
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles, Send, FileText, CheckSquare, MessageCircle } from 'lucide-react';
 import type { Project } from '@/lib/model';
+
 type Message = { id: string; role: 'user' | 'assistant'; content: string };
+type PendingProposal = {
+  id: string;
+  summary: string;
+  slots: string[];
+  labels: string[];
+};
+
 export default function AssignmentChat({
   project,
   aiReady,
   onCreate,
   onBrief,
   onPlan,
+  onProjectUpdate,
 }: {
   project: Project;
   aiReady: boolean;
   onCreate: () => void;
   onBrief: () => void;
   onPlan: () => void;
+  onProjectUpdate?: (project: Project) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const latest = useRef<HTMLDivElement>(null);
   const requestId = useRef<string | null>(null);
   const isDemo = !project.id;
+  const timeZone =
+    typeof Intl !== 'undefined'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      : 'UTC';
+
   useEffect(() => {
     let alive = true;
     setMessages([]);
     setError('');
     setQuestion('');
+    setPendingProposal(null);
     requestId.current = null;
     if (isDemo) {
       setLoading(false);
@@ -51,9 +68,11 @@ export default function AssignmentChat({
       alive = false;
     };
   }, [project.id, isDemo]);
+
   useEffect(() => {
     if (messages.length) latest.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [messages.length, busy]);
+  }, [messages.length, busy, pendingProposal]);
+
   async function send(e: React.FormEvent) {
     e.preventDefault();
     if (isDemo) {
@@ -63,16 +82,23 @@ export default function AssignmentChat({
     if (busy || !question.trim() || loading) return;
     setBusy(true);
     setError('');
+    setPendingProposal(null);
     requestId.current ??= crypto.randomUUID();
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: project.id, question, requestId: requestId.current }),
+        body: JSON.stringify({
+          project: project.id,
+          question,
+          requestId: requestId.current,
+          timeZone,
+        }),
       });
       const data: any = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to get an answer. Please try again.');
       setMessages(data.messages);
+      setPendingProposal(data.pendingProposal || null);
       setQuestion('');
       requestId.current = null;
     } catch (e) {
@@ -81,6 +107,40 @@ export default function AssignmentChat({
       setBusy(false);
     }
   }
+
+  async function resolveProposal(action: 'confirmAvailability' | 'cancelAvailability') {
+    if (busy || !pendingProposal) return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project: project.id,
+          action,
+          timeZone,
+          proposal: {
+            slots: pendingProposal.slots,
+            summary: pendingProposal.summary,
+          },
+        }),
+      });
+      const data: any = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to update availability.');
+      setMessages(data.messages);
+      setPendingProposal(null);
+      if (data.project && onProjectUpdate) onProjectUpdate(data.project);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const lastAssistantId =
+    [...messages].reverse().find((m) => m.role === 'assistant')?.id || null;
+
   return (
     <div className='chat-layout'>
       <section className='panel chat-panel'>
@@ -103,12 +163,15 @@ export default function AssignmentChat({
             <div className='chat-welcome'>
               <Sparkles size={30} />
               <h2>What would you like to figure out?</h2>
-              <p>Ask about the requirements, get an idea unstuck, or work out your next step.</p>
+              <p>
+                Ask about the requirements, set your availability in plain language, or work out
+                your next step.
+              </p>
               <div className='chat-prompts'>
                 {[
                   'What are the main deliverables for this assignment?',
+                  'I’m free Tuesday from 10am to 2pm.',
                   'What should our group work on next?',
-                  'Help me break down the hardest part.',
                 ].map((text) => (
                   <button
                     key={text}
@@ -127,7 +190,27 @@ export default function AssignmentChat({
             messages.map((m) => (
               <article key={m.id} className={'chat-message ' + m.role}>
                 <span className='chat-who'>{m.role === 'user' ? 'You' : 'Teamup AI'}</span>
-                <div>{m.content}</div>
+                <div className='chat-bubble-text'>{m.content}</div>
+                {pendingProposal && m.id === lastAssistantId && (
+                  <div className='chat-proposal-actions'>
+                    <button
+                      type='button'
+                      className='btn primary'
+                      disabled={busy}
+                      onClick={() => resolveProposal('confirmAvailability')}
+                    >
+                      Confirm availability
+                    </button>
+                    <button
+                      type='button'
+                      className='btn'
+                      disabled={busy}
+                      onClick={() => resolveProposal('cancelAvailability')}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </article>
             ))
           )}
@@ -158,7 +241,7 @@ export default function AssignmentChat({
           </label>
           <textarea
             id='assignment-question'
-            placeholder='Ask about your assignment…'
+            placeholder='Ask about your assignment or say when you’re free…'
             maxLength={6000}
             value={question}
             disabled={busy}
@@ -184,8 +267,8 @@ export default function AssignmentChat({
           </button>
         </form>
         <p className='chat-footnote'>
-          Your chat is saved privately to your account. Check important details against the
-          assignment brief.
+          Your chat is saved privately to your account. Try “I’m free Tuesday 10am–2pm” to propose
+          availability. Check important details against the assignment brief.
         </p>
       </section>
       <aside className='stack'>
@@ -206,7 +289,8 @@ export default function AssignmentChat({
             <small>
               AI can reference your brief, tasks, milestones, and up to 3 recent TXT, Markdown, or
               CSV files under 100 KB each. For PDFs and other formats, paste the relevant text into
-              your brief or question.
+              your brief or question. You can also describe your availability in chat for
+              confirmation.
             </small>
           </div>
         </section>

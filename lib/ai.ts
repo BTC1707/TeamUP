@@ -86,6 +86,57 @@ export async function complete(messages: AIMessage[], json = false, providedKey?
   if (!answer) throw new AIError('Gemini could not answer this question. Try rephrasing it.');
   return answer;
 }
+export type AvailabilityIntent = {
+  intent: 'availability' | 'chat' | 'clarify';
+  summary?: string;
+  clarifyQuestion?: string;
+  ranges?: {
+    date?: string;
+    weekday?: string;
+    startHour: number;
+    endHour: number;
+  }[];
+};
+
+/** Classify whether a chat message is asking to set availability; extract ranges as JSON. */
+export async function classifyAvailabilityIntent(
+  question: string,
+  timeZone: string,
+  windowDates: string[],
+) {
+  const raw = await complete(
+    [
+      {
+        role: 'system',
+        content: [
+          'You classify TeamUP chat messages about personal availability.',
+          'Return JSON only with shape:',
+          '{"intent":"availability"|"chat"|"clarify","summary":string,"clarifyQuestion":string,"ranges":[{"date":"YYYY-MM-DD","weekday":"tuesday","startHour":10,"endHour":14}]}',
+          'intent=availability when the user states times they are free/busy to mark on their schedule.',
+          'intent=clarify when they seem to want availability changes but day or hours are missing/ambiguous.',
+          'intent=chat for normal assignment questions.',
+          'Hours are 24h local wall time. endHour is exclusive (10am–2pm => startHour 10, endHour 14).',
+          'Prefer weekday names when the user says Mon/Tuesday/etc. Use date only when they give a concrete date.',
+          `User timezone: ${timeZone}. Valid dates in the next 7 days: ${windowDates.join(', ')}.`,
+          'Availability grid only supports 7am–10pm local (start hours 7–22). Do not invent overnight ranges.',
+          'summary should be a short confirmation phrase. clarifyQuestion asks for the missing detail.',
+        ].join(' '),
+      },
+      { role: 'user', content: question },
+    ],
+    true,
+  );
+  try {
+    const parsed = JSON.parse(raw) as AvailabilityIntent;
+    if (!parsed || !['availability', 'chat', 'clarify'].includes(parsed.intent)) {
+      return { intent: 'chat' as const };
+    }
+    return parsed;
+  } catch {
+    return { intent: 'chat' as const };
+  }
+}
+
 export async function assignmentContext(project: Project) {
   const { DB, BUCKET } = runtime();
   const result = await DB.prepare(
