@@ -162,6 +162,20 @@ git push -u origin HEAD  # then open a PR
 - Use the **same email** teammates invite you with
 - Live-site data persists in Cloudflare D1 (refresh won’t wipe it)
 
+## Browser push nudges
+
+Team members can enable push notifications in their account settings, then use **Nudge** next to a teammate on the Team page. Push subscriptions are stored per user and device in D1. A VAPID keypair is required for each deployment before browser subscriptions can be created.
+
+Generate a keypair once with `npm run push:keys`. Keep the public key stable after users have subscribed. For local development, put the three printed values in the ignored `.dev.vars` file. For production, add them as Worker secrets in the Cloudflare account:
+
+```text
+VAPID_SERVER_PUBLIC_KEY=<printed public key>
+VAPID_SERVER_PRIVATE_KEY=<printed private key>
+VAPID_SUBJECT=https://teamup.landonpack7-teamup.workers.dev
+```
+
+Use `npx wrangler secret put VAPID_SERVER_PUBLIC_KEY`, `npx wrangler secret put VAPID_SERVER_PRIVATE_KEY`, and `npx wrangler secret put VAPID_SUBJECT`; enter each value at its prompt. Never commit `.dev.vars` or share the private key. Deploy the app and run `npm run cf:migrate` so D1 has the `push_subscriptions` table. Each teammate must enable browser notifications on each device and grant permission before they can receive nudges.
+
 ---
 
 ## One-time Cloudflare setup (project owner only)
