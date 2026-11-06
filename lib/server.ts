@@ -15,6 +15,7 @@ export const runtime = () =>
     VAPID_SERVER_PRIVATE_KEY?: string;
     RESEND_API_KEY?: string;
     EMAIL_FROM?: string;
+    GOOGLE_CALENDAR_CLIENT_ID?: string;
   };
 
 export async function identity() {
