@@ -127,9 +127,13 @@ a:focus-visible {
   background: #fff;
   gap: 16px;
 }
-/* Desktop already shows the sidebar; only need the toggle on small screens. */
 .mobile-sidebar-trigger {
-  display: none;
+  display: inline-flex;
+}
+@media (min-width: 1200px) and (hover: hover) and (pointer: fine) {
+  .mobile-sidebar-trigger {
+    display: none;
+  }
 }
 .top-actions {
   display: flex;
@@ -795,7 +799,7 @@ button.member-row-button:focus-visible {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 10px 22px;
+  padding: 10px 22px 0;
 }
 .availability-overlap-note {
   color: #727b8d;
@@ -1176,9 +1180,6 @@ button.member-row-button:focus-visible {
     height: 62px;
     padding: 0 16px;
   }
-  .mobile-sidebar-trigger {
-    display: inline-flex;
-  }
   .mobile-title {
     display: block;
     font-weight: 650;
@@ -1186,8 +1187,20 @@ button.member-row-button:focus-visible {
   .page-heading {
     align-items: flex-start;
   }
+  .page-heading.overview-page-heading {
+    flex-direction: row;
+  }
+  .overview-greeting-lead {
+    white-space: nowrap;
+  }
+  .overview-greeting-name {
+    display: block;
+  }
   .page-heading h1 {
     font-size: 25px;
+  }
+  .page-heading.overview-page-heading h1 {
+    font-size: clamp(20px, 5.6vw, 23px);
   }
   .page-heading .subtext {
     font-size: 13px;
@@ -1972,7 +1985,7 @@ body.tutorial-running .app-main {
 .project-settings .invite-panel {
   border: 0;
   border-radius: 0;
-  padding: 0 0 24px;
+  padding: 18px 0 24px;
   margin: 0;
   box-shadow: none;
 }

@@ -1452,7 +1452,7 @@ export default function Workspace({
       <main className='app-main'>
         <header className='topbar'>
           <div className='flex gap-3 items-center'>
-            {/* Sidebar toggle only on small screens — desktop already shows the sidebar. */}
+            {/* Sidebar toggle for mobile, tablet, and desktop layouts. */}
             <SidebarTrigger className='mobile-sidebar-trigger' />
             <span className='mobile-title'>teamup.</span>
           </div>
@@ -1652,12 +1652,24 @@ export default function Workspace({
               }}
             />
           )}
-          <div className='page-heading' data-tutorial-step='0'>
+          <div
+            className={`page-heading${view === 'Overview' ? ' overview-page-heading' : ''}`}
+            data-tutorial-step='0'
+          >
             <div>
               <h1>
-                {view === 'Overview'
-                  ? `Let’s make progress${user ? ', ' + user.name.split(' ')[0] : ''}.`
-                  : view}
+                {view === 'Overview' ? (
+                  user ? (
+                      <>
+                        <span className='overview-greeting-lead'>Let’s make progress,</span>{' '}
+                        <span className='overview-greeting-name'>{user.name.split(' ')[0]}.</span>
+                      </>
+                    ) : (
+                      'Let’s make progress.'
+                    )
+                ) : (
+                  view
+                )}
               </h1>
               <p className='subtext'>
                 {view === 'Overview'
