@@ -56,7 +56,11 @@ export function LandingGettingStarted() {
         </div>
       </div>
 
-      <a className='landing-scroll-cue' href='#faq' aria-label='Scroll to FAQ'>
+      <a
+        className='landing-scroll-cue'
+        href='#faq'
+        aria-label='Scroll to FAQ and account links'
+      >
         <span>FAQ</span>
         <ChevronDown size={22} aria-hidden='true' />
       </a>

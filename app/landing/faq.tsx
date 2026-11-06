@@ -1,3 +1,5 @@
+import { LandingFooter } from './footer';
+
 const questions = [
   {
     question: 'What can my team organize in TeamUP?',
@@ -20,22 +22,26 @@ const questions = [
   },
 ];
 
+/** Final landing viewport: FAQ plus account / sign-in / demo footer. */
 export function LandingFaq() {
   return (
     <section className='landing-faq' id='faq' aria-labelledby='landing-faq-title'>
-      <div className='landing-faq-heading'>
-        <p className='landing-eyebrow'>FAQ</p>
-        <h2 id='landing-faq-title'>Questions, answered</h2>
-        <p>Quick answers to help your group get started.</p>
+      <div className='landing-faq-body'>
+        <div className='landing-faq-heading'>
+          <p className='landing-eyebrow'>FAQ</p>
+          <h2 id='landing-faq-title'>Questions, answered</h2>
+          <p>Quick answers to help your group get started.</p>
+        </div>
+        <div className='landing-faq-list'>
+          {questions.map(({ question, answer }) => (
+            <details className='landing-faq-item' key={question}>
+              <summary>{question}</summary>
+              <p>{answer}</p>
+            </details>
+          ))}
+        </div>
       </div>
-      <div className='landing-faq-list'>
-        {questions.map(({ question, answer }) => (
-          <details className='landing-faq-item' key={question}>
-            <summary>{question}</summary>
-            <p>{answer}</p>
-          </details>
-        ))}
-      </div>
+      <LandingFooter />
     </section>
   );
 }
