@@ -33,6 +33,7 @@ import {
   Settings,
   ArrowRight,
   LockKeyhole,
+  Send,
 } from 'lucide-react';
 import {
   SidebarProvider,
@@ -199,9 +200,12 @@ export default function Workspace({
   const [modal, setModal] = useState('');
   const [filter, setFilter] = useState('active');
   const [milestoneFilter, setMilestoneFilter] = useState('all');
+  const [availabilityView, setAvailabilityView] = useState<'calendar' | 'overlap'>('calendar');
   const [draft, setDraft] = useState<any>({});
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
+  const [pushSettings, setPushSettings] = useState({ enabled: false, publicKey: '', subscribed: false });
+  const [pushBusy, setPushBusy] = useState(false);
   const [plan, setPlan] = useState<any>(null);
   const [requirements, setRequirements] = useState('');
   // Localhost + /demo: fully interactive in memory (no Cloudflare DB).
@@ -318,6 +322,64 @@ export default function Workspace({
     if (!r.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
     return data;
   }
+  async function changePushSubscription() {
+    setPushBusy(true);
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
+        throw new Error('This browser does not support push notifications.');
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      const existing = await registration.pushManager.getSubscription();
+      if (existing && pushSettings.subscribed) {
+        await api('/api/push', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'unsubscribe', endpoint: existing.endpoint }),
+        });
+        await existing.unsubscribe();
+        setPushSettings((current) => ({ ...current, subscribed: false }));
+        toast.success('Push notifications turned off on this device.');
+        return;
+      }
+      if (!pushSettings.enabled || !pushSettings.publicKey)
+        throw new Error('Push delivery is not configured for this deployment yet.');
+      const permission =
+        Notification.permission === 'default'
+          ? await Notification.requestPermission()
+          : Notification.permission;
+      if (permission !== 'granted') throw new Error('Allow notifications in your browser to enable nudges.');
+      const normalizedKey = pushSettings.publicKey.replace(/-/g, '+').replace(/_/g, '/');
+      const paddedKey = normalizedKey.padEnd(Math.ceil(normalizedKey.length / 4) * 4, '=');
+      const applicationServerKey = Uint8Array.from(atob(paddedKey), (character) => character.charCodeAt(0));
+      const subscription = existing ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        }));
+      await api('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'subscribe', subscription: subscription.toJSON() }),
+      });
+      setPushSettings((current) => ({ ...current, subscribed: true }));
+      toast.success('Push notifications enabled on this device.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not update push notifications.');
+    } finally {
+      setPushBusy(false);
+    }
+  }
+  async function nudgeTeammate(recipientId: string) {
+    try {
+      await api('/api/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'nudge', projectId: project.id, recipientId }),
+      });
+      toast.success('Nudge sent.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not send the nudge.');
+    }
+  }
   async function load() {
     setLoading(true);
     try {
@@ -409,6 +471,24 @@ export default function Workspace({
         .then((d) => setFiles(d.files))
         .catch((e) => toast.error(e.message));
   }, [view, project.id, localOnly]);
+  useEffect(() => {
+    if (!user?.id || localOnly || demoMode) return;
+    let active = true;
+    fetch('/api/push')
+      .then(async (response) => {
+        const data = await response.json();
+        if (active && response.ok)
+          setPushSettings({
+            enabled: !!data.enabled,
+            publicKey: data.publicKey || '',
+            subscribed: !!data.subscribed,
+          });
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [user?.id, localOnly, demoMode]);
   useEffect(() => {
     const context = (document as any).modelContext;
     if (!context?.registerTool) return;
@@ -926,7 +1006,7 @@ export default function Workspace({
                   if (view === 'Assignment chat') {
                     if (requireProject()) {
                       open('planner');
-                      setRequirements(project.description);
+                      setRequirements('');
                     }
                   } else if (view === 'Milestones' && requireProject())
                     open('milestone', { due: project.due });
@@ -1191,7 +1271,7 @@ export default function Workspace({
                       onClick={() => {
                         if (requireProject()) {
                           open('planner');
-                          setRequirements(project.description);
+                          setRequirements('');
                         }
                       }}
                     >
@@ -1223,7 +1303,7 @@ export default function Workspace({
               onPlan={() => {
                 if (requireProject()) {
                   open('planner');
-                  setRequirements(project.description);
+                  setRequirements('');
                 }
               }}
               onProjectUpdate={(next) => {
@@ -1303,6 +1383,28 @@ export default function Workspace({
                     {project.members.length} schedules added
                   </span>
                 </div>
+                <div className='availability-tabs'>
+                  <Tabs
+                    value={availabilityView}
+                    onValueChange={(value) => setAvailabilityView(value as 'calendar' | 'overlap')}
+                  >
+                    <TabsList>
+                      <TabsTrigger value='calendar'>My calendar</TabsTrigger>
+                      <TabsTrigger value='overlap'>Team overlap</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  {availabilityView === 'overlap' && (
+                    <p className='availability-overlap-note'>
+                      Hours are highlighted only when every teammate with a saved schedule is free.
+                    </p>
+                  )}
+                </div>
+                {availabilityView === 'overlap' &&
+                  Object.values(project.availability).filter((slots) => slots.length).length < 2 && (
+                    <div className='empty availability-empty'>
+                      At least two teammates need to add availability to show overlapping hours.
+                    </div>
+                  )}
                 <div className='schedule'>
                   <span />
                   {Array.from({ length: 7 }, (_, i) => (
@@ -1332,11 +1434,12 @@ export default function Workspace({
                             key={key}
                             aria-label={`${fmt(future(i))} at ${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}${past ? ', time has passed' : ''}`}
                             aria-pressed={selected}
-                            disabled={busy || past}
+                            disabled={busy || past || availabilityView === 'overlap'}
                             className={
                               'slot ' +
                               (selected ? 'selected ' : '') +
                               (common ? 'common ' : '') +
+                              (availabilityView === 'overlap' && !common ? 'not-overlapping ' : '') +
                               (past ? 'past' : '')
                             }
                             onClick={() => {
@@ -1456,10 +1559,24 @@ export default function Workspace({
                       <small className='block'>{m.email}</small>
                     </div>
                     <small>{project.tasks.filter((t) => t.assignee === m.id).length} tasks</small>
-                    {isOwner && m.id !== user?.id && (
-                      <button className='btn subtle' onClick={() => open('remove', m)}>
-                        Remove
-                      </button>
+                    {m.id !== user?.id && (
+                      <div className='flex gap-2'>
+                        {!localOnly && pushSettings.enabled && (
+                          <button
+                            type='button'
+                            className='btn subtle'
+                            onClick={() => nudgeTeammate(m.id)}
+                            title={`Send a push nudge to ${m.name}`}
+                          >
+                            <Send size={14} /> Nudge
+                          </button>
+                        )}
+                        {isOwner && (
+                          <button className='btn subtle' onClick={() => open('remove', m)}>
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     )}
                   </div>
                 ))}
@@ -1647,9 +1764,27 @@ export default function Workspace({
                       checked={draft.notifications !== false}
                       onChange={(e) => setDraft({ ...draft, notifications: e.target.checked })}
                     />
-                    Save notification preference
+                    Allow teammate nudges
                   </label>
-                  <p className='form-note'>Email notifications are not connected yet.</p>
+                  <div className='push-controls'>
+                    <p className='form-note'>
+                      {pushSettings.enabled
+                        ? 'Browser push lets project teammates send you a nudge on this device.'
+                        : 'Browser push is waiting for this deployment’s VAPID keys to be configured.'}
+                    </p>
+                    <button
+                      type='button'
+                      className='btn subtle'
+                      disabled={pushBusy || (!pushSettings.enabled && !pushSettings.subscribed)}
+                      onClick={changePushSubscription}
+                    >
+                      {pushBusy
+                        ? 'Updating…'
+                        : pushSettings.subscribed
+                          ? 'Turn off push on this device'
+                          : 'Enable push on this device'}
+                    </button>
+                  </div>
                 </>
               )}
               {modal === 'project' && (
@@ -1676,16 +1811,6 @@ export default function Workspace({
               )}
               {['task', 'milestone'].includes(modal) && (
                 <label>
-                  Description (optional)
-                  <textarea
-                    maxLength={5000}
-                    value={draft.description || ''}
-                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                  />
-                </label>
-              )}
-              {['task', 'milestone'].includes(modal) && (
-                <label>
                   {modal === 'task' ? 'Task' : 'Milestone'} name
                   <input
                     required
@@ -1695,6 +1820,16 @@ export default function Workspace({
                     placeholder={
                       modal === 'task' ? 'e.g. Interview five students' : 'e.g. Research complete'
                     }
+                  />
+                </label>
+              )}
+              {['task', 'milestone'].includes(modal) && (
+                <label>
+                  Description (optional)
+                  <textarea
+                    maxLength={5000}
+                    value={draft.description || ''}
+                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                   />
                 </label>
               )}

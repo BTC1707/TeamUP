@@ -17,6 +17,7 @@
 
 import { LandingAbout } from './landing/about';
 import { LandingFooter } from './landing/footer';
+import { LandingFaq } from './landing/faq';
 import { LandingGettingStarted } from './landing/getting-started';
 import { LandingHero } from './landing/hero';
 
@@ -26,6 +27,7 @@ export default function Landing() {
       <LandingHero />
       <LandingAbout />
       <LandingGettingStarted />
+      <LandingFaq />
       <LandingFooter />
     </main>
   );

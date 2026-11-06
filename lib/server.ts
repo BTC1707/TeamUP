@@ -10,6 +10,9 @@ export const runtime = () =>
     AI_CONFIG_ENCRYPTION_KEY?: string;
     SITE_OWNER_EMAIL?: string;
     AUTH_SECRET?: string;
+    VAPID_SUBJECT?: string;
+    VAPID_SERVER_PUBLIC_KEY?: string;
+    VAPID_SERVER_PRIVATE_KEY?: string;
   };
 
 export async function identity() {

@@ -56,6 +56,20 @@ export const settings = sqliteTable('settings', {
   timeZone: text('time_zone').notNull().default('UTC'),
   notifications: integer('notifications', { mode: 'boolean' }).notNull().default(true),
 });
+export const pushSubscriptions = sqliteTable(
+  'push_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    endpoint: text('endpoint').notNull(),
+    p256dh: text('p256dh').notNull(),
+    authSecret: text('auth_secret').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('push_subscription_user_endpoint').on(t.userId, t.endpoint)],
+);
 // data is retained as a read-only legacy migration backup, never used for normalized saves.
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),

@@ -581,6 +581,35 @@ h3 {
   padding: 22px;
   overflow-x: auto;
 }
+.availability-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 0 22px;
+}
+.availability-overlap-note {
+  color: #727b8d;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.availability-empty {
+  margin: 14px 22px 0;
+}
+.push-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #e5e4f1;
+  border-radius: 10px;
+  background: #faf9ff;
+}
+.push-controls .form-note {
+  margin: 0;
+}
 .schedule .day {
   text-align: center;
   font-size: 14px;
@@ -630,6 +659,11 @@ h3 {
 }
 .slot.common {
   box-shadow: inset 0 0 0 2px #5b54d9;
+}
+.slot.not-overlapping {
+  background: #fff;
+  border-color: #e4e6ed;
+  opacity: 0.45;
 }
 .slot.selected.common {
   box-shadow: inset 0 0 0 2px #fff;
@@ -1879,6 +1913,54 @@ body.tutorial-running .app-main {
 .landing-footer a {
   color: #5b54d9;
   font-weight: 550;
+}
+.landing-faq {
+  padding: 64px clamp(20px, 5vw, 64px) 72px;
+  background: rgb(255 255 255 / 58%);
+  border-block: 1px solid #e8e8f0;
+}
+.landing-faq-heading {
+  max-width: 720px;
+  margin: 0 auto 28px;
+  text-align: center;
+}
+.landing-faq-heading h2 {
+  margin: 0 0 10px;
+  font-size: clamp(24px, 3vw, 34px);
+  letter-spacing: -0.6px;
+}
+.landing-faq-heading > p:last-child {
+  margin: 0;
+  color: #667085;
+  line-height: 1.6;
+}
+.landing-faq-list {
+  width: min(100%, 820px);
+  margin: 0 auto;
+  display: grid;
+  gap: 10px;
+}
+.landing-faq-item {
+  padding: 18px 20px;
+  border: 1px solid #e2e4ed;
+  border-radius: 12px;
+  background: #fff;
+}
+.landing-faq-item summary {
+  cursor: pointer;
+  color: #30364a;
+  font-weight: 650;
+}
+.landing-faq-item summary:focus-visible {
+  outline: 2px solid #6352bb;
+  outline-offset: 4px;
+  border-radius: 3px;
+}
+.landing-faq-item p {
+  margin: 12px 0 0;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.7;
 }
 @media (max-width: 760px) {
   .landing-about {
