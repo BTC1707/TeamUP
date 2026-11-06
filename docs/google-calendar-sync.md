@@ -1,6 +1,8 @@
 # Google Calendar availability sync
 
-TeamUP checks free/busy information from the signed-in user's **primary Google Calendar**. It does not read event titles, descriptions, guests, or locations. The sync selects future, open hourly blocks from 7 AM through 10 PM for the seven dates shown in the Availability calendar. It replaces the user's current selections within those displayed hours and keeps availability outside that week or hour range unchanged.
+TeamUP checks free/busy information from the signed-in user's **primary Google Calendar**. It does not read event titles, descriptions, guests, or locations. Sync covers future hourly blocks from 7 AM through 10 PM for the seven dates shown in the Availability calendar.
+
+Google busy times are treated as a **constraint**, not as automatic availability. An empty calendar means “unknown,” not “free for the team.”
 
 ## Configure Google OAuth
 
@@ -15,6 +17,14 @@ This flow uses Google Identity Services in the browser, so it does not need a cl
 
 ## Sync behavior
 
-When the user clicks **Sync Google Calendar**, Google asks them to sign in and grant access if needed. TeamUP requests free/busy data for the primary calendar, compares each visible hourly block with busy intervals, then selects blocks with no overlap. The temporary Google access token is kept in memory for the request and is not stored by TeamUP.
+When the user clicks **Sync Google Calendar**, Google asks them to sign in and grant access if needed. TeamUP requests free/busy data for the primary calendar, then opens a confirmation step. Nothing is written until the user chooses:
+
+- **Block busy hours** (default) — clears any of the user’s selected slots that overlap busy times for the displayed week. Open hours are **not** auto-selected. Those hours stay visible as a striped **Busy** overlay on My calendar for the rest of the session (never shown on Team overlap, which only displays shared free times).
+- **Suggest open hours** — previews free hours on the grid so the user can edit, then **Apply** or **Discard**. Busy hours still appear as an overlay.
+- **Cancel** — leaves the schedule unchanged.
+
+Team overlap continues to use only hours each teammate has explicitly marked available.
+
+The temporary Google access token is kept in memory for the request and is not stored by TeamUP.
 
 Google references: [Calendar API free/busy query](https://developers.google.com/workspace/calendar/api/v3/reference/freebusy/query), [Calendar API scopes](https://developers.google.com/workspace/calendar/api/auth), and [OAuth for web applications](https://developers.google.com/identity/protocols/oauth2/web-server).
