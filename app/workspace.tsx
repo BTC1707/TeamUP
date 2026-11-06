@@ -304,6 +304,7 @@ export default function Workspace({
     const p = practiceProject();
     setLocalOnly(true);
     setProject(p);
+    persistProjectSelection(p.id || null);
     setProjects([p]);
     setUser(demoUser);
     setLoading(false);
@@ -319,6 +320,7 @@ export default function Workspace({
     setUser(localAdminUser());
     setProjects([]);
     setProject(emptyProject);
+    persistProjectSelection(null);
     setLoading(false);
     setError('');
     setTour(null);
@@ -468,13 +470,14 @@ export default function Workspace({
       setEmailReady(!!data.emailReady);
       setCanConfigureAI(data.canConfigureAI);
       offerTutorialIfNeeded(!!data.user.tutorialSeen);
-      setProject(
+      const selectedProject =
         data.projects.find(
           (p: Project) => p.id === new URLSearchParams(window.location.search).get('project'),
         ) ||
           data.projects[0] ||
-          emptyProject,
-      );
+          emptyProject;
+      setProject(selectedProject);
+      persistProjectSelection(selectedProject.id || null);
       setError('');
     } catch (e) {
       setError(
@@ -519,14 +522,15 @@ export default function Workspace({
             setEmailReady(!!data.emailReady);
             setCanConfigureAI(!!data.canConfigureAI);
             offerTutorialIfNeeded(!!data.user.tutorialSeen);
-            setProject(
+            const selectedProject =
               (data.projects || []).find(
                 (p: Project) =>
                   p.id === new URLSearchParams(window.location.search).get('project'),
               ) ||
                 data.projects?.[0] ||
-                emptyProject,
-            );
+                emptyProject;
+            setProject(selectedProject);
+            persistProjectSelection(selectedProject.id || null);
             setError('');
             setLoading(false);
             return;
@@ -620,7 +624,23 @@ export default function Workspace({
   }, [project, localOnly]);
   function setView(nextView: string) {
     const path = workspacePathByView[nextView as keyof typeof workspacePathByView];
-    if (path) router.push(`${routeBase}/${path}`);
+    if (path) router.push(`${routeBase}/${path}${window.location.search}`, { scroll: false });
+  }
+
+  function persistProjectSelection(projectId: string | null) {
+    const params = new URLSearchParams(window.location.search);
+    if (projectId) params.set('project', projectId);
+    else params.delete('project');
+    const query = params.toString();
+    const target = `${pathname || `${routeBase}/${workspacePathByView[view]}`}${query ? `?${query}` : ''}`;
+    if (`${window.location.pathname}${window.location.search}` !== target) {
+      window.history.replaceState(window.history.state, '', target);
+    }
+  }
+
+  function selectProject(nextProject: Project) {
+    setProject(nextProject);
+    persistProjectSelection(nextProject.id || null);
   }
 
   function open(type: string, data: any = {}) {
@@ -655,7 +675,9 @@ export default function Workspace({
     }
     const remaining = projects.filter((p) => p.id !== id);
     setProjects(remaining);
-    setProject(remaining[0] || emptyProject);
+    const nextProject = remaining[0] || emptyProject;
+    setProject(nextProject);
+    persistProjectSelection(nextProject.id || null);
     setFiles([]);
   }
 
@@ -819,6 +841,7 @@ export default function Workspace({
         }
       }
       setProject(next);
+      persistProjectSelection(next.id || null);
       setProjects((prev) => {
         if (create) return [...prev.filter((p) => p.id !== next.id), next];
         return prev.map((p) => (p.id === next.id ? next : p));
@@ -833,6 +856,7 @@ export default function Workspace({
         body: JSON.stringify({ action: create ? 'create' : 'update', project: next }),
       });
       setProject(result.project);
+      persistProjectSelection(result.project.id || null);
       setProjects((prev) =>
         create
           ? [...prev, result.project]
@@ -1159,8 +1183,7 @@ export default function Workspace({
                 title={p.name}
                 className={'project-option ' + (p.id === project.id ? 'active' : '')}
                 onClick={() => {
-                  setProject(p);
-                  setView('Overview');
+                  selectProject(p);
                   setError('');
                 }}
               >
@@ -1270,7 +1293,7 @@ export default function Workspace({
                           if (!n.read) void markNotifications('read', [n.id]);
                           if (n.projectId && n.projectId !== project.id) {
                             const target = projects.find((p) => p.id === n.projectId);
-                            if (target) setProject(target);
+                            if (target) selectProject(target);
                           }
                           setNotifOpen(false);
                         }}
@@ -1737,6 +1760,7 @@ export default function Workspace({
               }}
               onProjectUpdate={(next) => {
                 setProject(next);
+                persistProjectSelection(next.id || null);
                 setProjects((prev) => prev.map((p) => (p.id === next.id ? next : p)));
               }}
             />
