@@ -6,9 +6,6 @@ import DemoLink from '../demo-link';
 export function LandingHero() {
   return (
     <section className='landing-hero'>
-      <nav className='landing-nav' aria-label='Main navigation'>
-        <a href='#about'>About Us</a>
-      </nav>
       <div className='landing-hero-copy'>
         <p className='landing-brand'>
           teamup<span>.</span>
@@ -22,7 +19,6 @@ export function LandingHero() {
         </p>
 
         <div className='landing-cta-row'>
-          {/* Working — creates an account via /signup */}
           <a className='btn primary' href={LANDING_ROUTES.signUp}>
             Sign up
           </a>
@@ -31,9 +27,7 @@ export function LandingHero() {
             Sign in
           </a>
 
-          <DemoLink className='btn subtle'>
-            Try demo
-          </DemoLink>
+          <DemoLink className='btn subtle'>Try demo</DemoLink>
         </div>
       </div>
 

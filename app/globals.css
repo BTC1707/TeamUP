@@ -1886,11 +1886,13 @@ body.tutorial-running .app-main {
 }
 .landing-hero {
   position: relative;
-  min-height: min(92vh, 860px);
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   padding: clamp(32px, 6vw, 72px) clamp(20px, 5vw, 64px);
   padding-bottom: clamp(72px, 10vw, 96px);
+  box-sizing: border-box;
 }
 @media (prefers-reduced-motion: no-preference) {
   html:has(.landing-page) {
@@ -1939,12 +1941,6 @@ body.tutorial-running .app-main {
     animation: none;
   }
 }
-.landing-nav {
-  position: absolute;
-  top: clamp(20px, 4vw, 40px);
-  right: clamp(20px, 5vw, 64px);
-}
-.landing-nav a,
 .landing-page .landing-cta-row .btn {
   display: inline-flex;
   align-items: center;
@@ -1966,16 +1962,6 @@ body.tutorial-running .app-main {
     box-shadow 0.15s ease,
     transform 0.15s ease;
 }
-.landing-nav a {
-  border: 1px solid #dedbed;
-  color: #4c456e;
-  background: rgb(255 255 255 / 72%);
-}
-.landing-nav a:hover {
-  color: #5149c7;
-  border-color: #bdb7ec;
-  background: #fff;
-}
 .landing-page .landing-cta-row .btn.subtle {
   padding: 0 14px;
   border: 1px solid #e0e4ed;
@@ -1991,15 +1977,15 @@ body.tutorial-running .app-main {
   background: #4f48c7;
   border-color: #4f48c7;
 }
-.landing-nav a:focus-visible,
 .landing-page .landing-cta-row .btn:focus-visible {
   outline: 2px solid #6352bb;
   outline-offset: 3px;
 }
 .landing-about {
   position: relative;
-  scroll-margin-top: 24px;
-  min-height: min(92vh, 860px);
+  scroll-margin-top: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -2121,16 +2107,6 @@ body.tutorial-running .app-main {
   width: 100%;
   aspect-ratio: 4 / 2;
   object-fit: cover;
-}
-.landing-visual-frame figcaption {
-  padding: 10px 14px;
-  color: #7a8497;
-  font-size: 12px;
-}
-.landing-visual-frame figcaption a {
-  color: #5b54d9;
-  text-decoration: underline;
-  text-underline-offset: 2px;
 }
 .landing-visual-placeholder {
   min-height: 320px;
@@ -2357,9 +2333,13 @@ body.tutorial-running .app-main {
 }
 @media (max-width: 860px) {
   .landing-hero {
-    min-height: auto;
-    padding-top: 56px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-top: 48px;
     padding-bottom: 88px;
+  }
+  .landing-hero-copy {
+    max-width: 100%;
   }
   .landing-page .landing-cta-row .btn {
     width: auto;
@@ -2369,6 +2349,11 @@ body.tutorial-running .app-main {
   }
   .landing-page .landing-cta-row .btn.subtle {
     flex-basis: 100%;
+  }
+  .landing-about {
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-top: 48px;
   }
 }
 

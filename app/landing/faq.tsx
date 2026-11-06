@@ -6,8 +6,7 @@ const questions = [
   },
   {
     question: 'Can I try TeamUP before creating an account?',
-    answer:
-      'Yes. Open the demo workspace to explore the planning tools. Demo changes are temporary and reset when you leave or reload.',
+    answer: 'Yes. You can open the demo workspace to explore the application and try it.',
   },
   {
     question: 'How do teammates join a project?',
@@ -17,7 +16,7 @@ const questions = [
   {
     question: 'Does TeamUP send reminders or push notifications?',
     answer:
-      'Automatic deadline reminders are not connected yet. On deployments with email and/or push configured, teammates can receive invitation emails and Team-page nudges (browser notification and/or email). Enable browser notifications in account settings to get push nudges.',
+      'Yes. Teammates can get invitation emails, in-app updates, and optional browser or email nudges from the Team page so everyone stays in the loop.',
   },
 ];
 

@@ -9,13 +9,6 @@ export function LandingVisual() {
         width='1800'
         height='1200'
       />
-      <figcaption>
-        Students collaborating on a shared project. Photo by{' '}
-        <a href='https://unsplash.com/photos/diverse-group-of-students-gathered-around-a-laptop-8gAbl776pc0'>
-          Vitaly Gariev on Unsplash
-        </a>
-        .
-      </figcaption>
     </figure>
   );
 }

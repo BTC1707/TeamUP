@@ -1325,17 +1325,13 @@ export default function Workspace({
                 {isLocalAdmin ? (
                   <>
                     <strong>Local admin</strong> · Signed in as <strong>admin</strong>. Create
-                    projects and tasks here for testing. This does not change the live Cloudflare
-                    database.
+                    projects and tasks here for testing. Changes stay on this device.
                   </>
                 ) : (
                   <>
-                    <strong>{demoMode ? 'Demo workspace' : 'Local sandbox'}</strong> · Fully
-                    interactive here — tasks, milestones, Assignment chat, and AI planning
-                    {aiReady
-                      ? ' (Gemini connected via .dev.vars)'
-                      : ' (set GEMINI_API_KEY in .dev.vars to enable AI)'}
-                    . Changes stay in this browser tab. Reload resets practice data.
+                    <strong>{demoMode ? 'Demo workspace' : 'Practice workspace'}</strong> · Explore
+                    tasks, milestones, chat, and AI planning. Changes stay on this device and reset
+                    when you reload.
                   </>
                 )}
               </span>
@@ -1527,16 +1523,10 @@ export default function Workspace({
           )}
           {canConfigureAI && !aiReady && (
             <div className='notice flex justify-between gap-3 items-center'>
-              <span>Connect Gemini to turn on assignment chat and AI planning.</span>
+              <span>Connect AI to turn on assignment chat and planning.</span>
               <button className='btn primary' onClick={() => open('ai-settings')}>
-                Connect Gemini
+                Connect AI
               </button>
-            </div>
-          )}
-          {localOnly && !aiReady && !canConfigureAI && (
-            <div className='notice'>
-              AI chat and planning need <code>GEMINI_API_KEY</code> in <code>.dev.vars</code>. Restart
-              the local server after adding it.
             </div>
           )}
           {!isDemo && view === 'Overview' && (
@@ -2125,7 +2115,7 @@ export default function Workspace({
               {
                 {
                   'delete-project': 'Delete project',
-                  'ai-settings': 'Connect Gemini',
+                  'ai-settings': 'Connect AI',
                   brief: 'Assignment brief',
                   project: 'Create a project',
                   task: draft.id ? 'Edit task' : 'Add a task',
@@ -2157,7 +2147,7 @@ export default function Workspace({
               onConnected={() => {
                 setAiReady(true);
                 setModal('');
-                toast.success('Gemini is connected. Ask a question or plan your project.');
+                toast.success('AI is connected. Ask a question or plan your project.');
               }}
             />
           )}
@@ -2463,7 +2453,7 @@ export default function Workspace({
               </button>
               {modal === 'profile' && canConfigureAI && (
                 <button type='button' className='btn' onClick={() => open('ai-settings')}>
-                  {aiReady ? 'Update Gemini connection' : 'Connect Gemini'}
+                  {aiReady ? 'Update AI connection' : 'Connect AI'}
                 </button>
               )}
               {modal === 'profile' && user && (
@@ -2666,15 +2656,7 @@ export default function Workspace({
             <div className='form'>
               {!aiReady && (
                 <div className='notice'>
-                  {localOnly
-                    ? 'Add GEMINI_API_KEY to .dev.vars and restart the local server to use AI planning.'
-                    : 'AI planning needs a service connection before it can generate a plan. You can add tasks manually in the meantime.'}
-                </div>
-              )}
-              {localOnly && aiReady && (
-                <div className='notice'>
-                  Local demo AI is on — uploads stay in memory and call Gemini from your
-                  .dev.vars key.
+                  AI planning isn’t available right now. You can still add tasks manually.
                 </div>
               )}
               {!plan && (
