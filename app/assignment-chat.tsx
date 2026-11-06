@@ -136,6 +136,8 @@ const CANCEL_ACTION: Record<PendingProposal['type'], CancelAction> = {
 export default function AssignmentChat({
   project,
   aiReady,
+  localDemo = false,
+  userId,
   onCreate,
   onBrief,
   onPlan,
@@ -143,6 +145,9 @@ export default function AssignmentChat({
 }: {
   project: Project;
   aiReady: boolean;
+  /** Localhost sandbox: call /api/chat/demo with in-memory project (no D1). */
+  localDemo?: boolean;
+  userId?: string;
   onCreate: () => void;
   onBrief: () => void;
   onPlan: () => void;
@@ -157,6 +162,7 @@ export default function AssignmentChat({
   const latest = useRef<HTMLDivElement>(null);
   const requestId = useRef<string | null>(null);
   const isDemo = !project.id;
+  const chatEndpoint = localDemo ? '/api/chat/demo' : '/api/chat';
   const timeZone =
     typeof Intl !== 'undefined'
       ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -169,7 +175,7 @@ export default function AssignmentChat({
     setQuestion('');
     setPendingProposal(null);
     requestId.current = null;
-    if (isDemo) {
+    if (isDemo || localDemo) {
       setLoading(false);
       return;
     }
@@ -189,7 +195,7 @@ export default function AssignmentChat({
     return () => {
       alive = false;
     };
-  }, [project.id, isDemo]);
+  }, [project.id, isDemo, localDemo]);
 
   useEffect(() => {
     if (messages.length) latest.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -197,7 +203,7 @@ export default function AssignmentChat({
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (isDemo) {
+    if (isDemo && !localDemo) {
       onCreate();
       return;
     }
@@ -225,16 +231,27 @@ export default function AssignmentChat({
     if (!activeProposal) setPendingProposal(null);
     requestId.current ??= crypto.randomUUID();
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch(chatEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: project.id,
-          question,
-          requestId: requestId.current,
-          timeZone,
-          pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
-        }),
+        body: JSON.stringify(
+          localDemo
+            ? {
+                project,
+                messages,
+                userId: userId || project.members[0]?.id,
+                question,
+                timeZone,
+                pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
+              }
+            : {
+                project: project.id,
+                question,
+                requestId: requestId.current,
+                timeZone,
+                pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
+              },
+        ),
       });
       const data: any = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to get an answer. Please try again.');
@@ -257,15 +274,26 @@ export default function AssignmentChat({
     setBusy(true);
     setError('');
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch(chatEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          project: project.id,
-          action,
-          timeZone,
-          proposal: proposalPayload(pendingProposal),
-        }),
+        body: JSON.stringify(
+          localDemo
+            ? {
+                project,
+                messages,
+                userId: userId || project.members[0]?.id,
+                action,
+                timeZone,
+                proposal: proposalPayload(pendingProposal),
+              }
+            : {
+                project: project.id,
+                action,
+                timeZone,
+                proposal: proposalPayload(pendingProposal),
+              },
+        ),
       });
       const data: any = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to apply that change.');

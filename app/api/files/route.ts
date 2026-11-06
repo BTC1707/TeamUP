@@ -66,7 +66,13 @@ export async function POST(req: Request) {
       await BUCKET.delete(id);
       throw e;
     }
-    return Response.json({ ok: true });
+    return Response.json({
+      ok: true,
+      id,
+      name: file.name.slice(0, 200),
+      type: file.type,
+      size: file.size,
+    });
   } catch (e) {
     return failure(e);
   }

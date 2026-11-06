@@ -6,6 +6,7 @@ import AssignmentChat from './assignment-chat';
 import ConnectAI from './connect-ai';
 import InviteLink from './invite-link';
 import Tutorial from './tutorial';
+import PlanReview, { type SuggestedPlan } from './plan-review';
 import { practiceProject, demoUser } from '@/lib/demo';
 import {
   clearLocalAdminSession,
@@ -206,10 +207,19 @@ export default function Workspace({
   const [aiReady, setAiReady] = useState(false);
   const [pushSettings, setPushSettings] = useState({ enabled: false, publicKey: '', subscribed: false });
   const [pushBusy, setPushBusy] = useState(false);
-  const [plan, setPlan] = useState<any>(null);
+  const [plan, setPlan] = useState<SuggestedPlan | null>(null);
   const [requirements, setRequirements] = useState('');
+  const [planFileIds, setPlanFileIds] = useState<string[]>([]);
+  /** Local sandbox keeps rubric File objects (no R2 upload). */
+  const [planFiles, setPlanFiles] = useState<File[]>([]);
+  const [includeMilestones, setIncludeMilestones] = useState(true);
+  /** Project id created for this plan review — Cancel deletes it. */
+  const [planFromCreateId, setPlanFromCreateId] = useState<string | null>(null);
   // Localhost + /demo: fully interactive in memory (no Cloudflare DB).
   const [localOnly, setLocalOnly] = useState(demoMode);
+
+  const PLAN_FILE_ACCEPT =
+    '.pdf,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.heic,.gif,application/pdf,image/*,text/plain,text/markdown,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
   const isDemo = !project.id;
   const startupNoticeKey = demoMode
     ? 'teamup.demo.workspaceOpened'
@@ -466,6 +476,21 @@ export default function Workspace({
     load();
   }, []);
   useEffect(() => {
+    if (!localOnly && !demoMode) return;
+    let alive = true;
+    fetch('/api/plan/demo')
+      .then(async (r) => {
+        const data: any = await r.json();
+        if (alive && r.ok) setAiReady(!!data.aiReady);
+      })
+      .catch(() => {
+        if (alive) setAiReady(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [localOnly, demoMode]);
+  useEffect(() => {
     if (view === 'Files' && !isDemo && !localOnly)
       api('/api/files?project=' + project.id)
         .then((d) => setFiles(d.files))
@@ -523,10 +548,185 @@ export default function Workspace({
   }
 
   function open(type: string, data: any = {}) {
-    setDraft(data);
     setModal(type);
     setError('');
     setPlan(null);
+    setPlanFromCreateId(null);
+    if (type === 'planner') {
+      setPlanFileIds([]);
+      setPlanFiles([]);
+      setIncludeMilestones(true);
+      setDraft(data);
+    } else if (type === 'project') {
+      setDraft({
+        includeMilestones: true,
+        rubricFiles: [] as File[],
+        rubricPaste: '',
+        ...data,
+      });
+    } else {
+      setDraft(data);
+    }
+  }
+
+  async function removeProjectById(id: string, name: string, version: number) {
+    if (!localOnly) {
+      await api('/api/workspace', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name, version }),
+      });
+    }
+    const remaining = projects.filter((p) => p.id !== id);
+    setProjects(remaining);
+    setProject(remaining[0] || emptyProject);
+    setFiles([]);
+  }
+
+  async function cancelPlanReview() {
+    const createdId = planFromCreateId;
+    const created = createdId ? projects.find((p) => p.id === createdId) || project : null;
+    setBusy(true);
+    try {
+      if (createdId && created && created.id === createdId) {
+        await removeProjectById(created.id, created.name, created.version);
+        toast.message('Project cancelled. Nothing was kept.');
+      } else {
+        toast.message('Suggestion discarded.');
+      }
+      setPlan(null);
+      setPlanFromCreateId(null);
+      setPlanFileIds([]);
+      setPlanFiles([]);
+      setRequirements('');
+      setModal('');
+    } catch (e) {
+      setError((e as Error).message);
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function fileToBase64(file: File) {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  async function uploadPlanFiles(projectId: string, files: File[]) {
+    const ids: string[] = [];
+    for (const file of files.slice(0, 3)) {
+      if (file.size > 5_000_000) throw new Error(`${file.name} must be under 5 MB for AI planning.`);
+      const form = new FormData();
+      form.set('project', projectId);
+      form.set('file', file);
+      form.set('purpose', 'rubric');
+      const data = await api('/api/files', { method: 'POST', body: form });
+      if (!data.id) throw new Error('File upload did not return an id.');
+      ids.push(data.id);
+    }
+    return ids;
+  }
+
+  async function requestDemoPlan(
+    snapshot: Project,
+    text: string,
+    files: File[],
+    milestones: boolean,
+  ) {
+    const inline = [];
+    for (const file of files.slice(0, 3)) {
+      if (file.size > 5_000_000) throw new Error(`${file.name} must be under 5 MB for AI planning.`);
+      inline.push({
+        name: file.name,
+        type: file.type,
+        dataBase64: await fileToBase64(file),
+      });
+    }
+    const r = await fetch('/api/plan/demo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project: snapshot,
+        requirements: text,
+        files: inline,
+        includeMilestones: milestones,
+      }),
+    });
+    const data: any = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Unable to generate a plan.');
+    return data as SuggestedPlan;
+  }
+
+  async function requestPlan(
+    projectId: string,
+    text: string,
+    fileIds: string[],
+    milestones: boolean,
+    snapshot?: Project,
+    files?: File[],
+  ) {
+    if (localOnly) {
+      return requestDemoPlan(snapshot || project, text, files || planFiles, milestones);
+    }
+    return (await api('/api/plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project: projectId,
+        requirements: text,
+        fileIds,
+        includeMilestones: milestones,
+      }),
+    })) as SuggestedPlan;
+  }
+
+  async function acceptSuggestedPlan() {
+    if (!plan || !requireProject()) return;
+    const tasks = plan.tasks.filter((t) => t.title.trim());
+    const milestones = plan.milestones.filter((m) => m.title.trim());
+    if (!tasks.length && !milestones.length) {
+      toast.error('Add at least one task or milestone, or discard this suggestion.');
+      return;
+    }
+    const milestoneIds = new Set(milestones.map((m) => m.id));
+    const nextDescription =
+      requirements.trim().length >= 30 ? requirements.trim() : project.description;
+    if (
+      await save({
+        ...project,
+        description: nextDescription,
+        tasks: [
+          ...project.tasks,
+          ...tasks.map((t) => ({
+            ...t,
+            title: t.title.trim(),
+            milestone: t.milestone && milestoneIds.has(t.milestone) ? t.milestone : '',
+          })),
+        ],
+        milestones: [...project.milestones, ...milestones.map((m) => ({ ...m, title: m.title.trim() }))],
+      })
+    ) {
+      setModal('');
+      setPlan(null);
+      setPlanFromCreateId(null);
+      setPlanFileIds([]);
+      setPlanFiles([]);
+      setRequirements('');
+      toast.success(
+        milestones.length && tasks.length
+          ? 'Plan added. You can keep editing anytime.'
+          : milestones.length
+            ? 'Milestones added.'
+            : 'Tasks added.',
+      );
+    }
   }
   async function save(next: Project, create = false) {
     // Local sandbox: keep everything in React state (no API / no DB).
@@ -592,22 +792,61 @@ export default function Workspace({
         setError('Sign in before creating your project.');
         return;
       }
-      ok = await save(
-        {
-          id: uid(),
-          name: draft.name,
-          course: draft.course,
-          description: draft.description,
-          due: draft.due,
-          members: [{ id: user.id, name: user.name, email: user.email }],
-          tasks: [],
-          milestones: [],
-          availability: {},
-          reminderHours: 24,
-          version: 0,
-        },
-        true,
-      );
+      const newId = uid();
+      const rubricFiles: File[] = Array.isArray(draft.rubricFiles) ? draft.rubricFiles : [];
+      const rubricPaste =
+        typeof draft.rubricPaste === 'string' ? draft.rubricPaste.trim() : '';
+      const wantsPlan =
+        aiReady && (rubricFiles.length > 0 || rubricPaste.length >= 30);
+      const created: Project = {
+        id: newId,
+        name: draft.name,
+        course: draft.course,
+        description: draft.description || rubricPaste.slice(0, 5000),
+        due: draft.due,
+        members: [{ id: user.id, name: user.name, email: user.email }],
+        tasks: [],
+        milestones: [],
+        availability: {},
+        reminderHours: 24,
+        version: 0,
+        owner: user.id,
+      };
+      ok = await save(created, true);
+      if (ok && wantsPlan) {
+        try {
+          setBusy(true);
+          const text = rubricPaste || String(draft.description || '');
+          let ids: string[] = [];
+          if (!localOnly) ids = await uploadPlanFiles(newId, rubricFiles);
+          else setPlanFiles(rubricFiles.slice(0, 3));
+          const suggested = await requestPlan(
+            newId,
+            text,
+            ids,
+            draft.includeMilestones !== false,
+            created,
+            rubricFiles,
+          );
+          setPlanFileIds(ids);
+          setIncludeMilestones(draft.includeMilestones !== false);
+          setRequirements(text);
+          setPlan(suggested);
+          setPlanFromCreateId(newId);
+          setModal('planner');
+          toast.message('Review the suggested plan — Cancel removes this project.');
+          return;
+        } catch (err) {
+          toast.error(
+            (err as Error).message ||
+              'Project created, but AI planning failed. You can open the AI planner anytime.',
+          );
+          setModal('');
+          return;
+        } finally {
+          setBusy(false);
+        }
+      }
     }
     if (modal === 'task') {
       const t = {
@@ -909,9 +1148,11 @@ export default function Workspace({
                 ) : (
                   <>
                     <strong>{demoMode ? 'Demo workspace' : 'Local sandbox'}</strong> · Fully
-                    interactive here — add tasks, milestones, and try styling. Changes stay in this
-                    browser tab and never touch the live Cloudflare database. Reload resets practice
-                    data.
+                    interactive here — tasks, milestones, Assignment chat, and AI planning
+                    {aiReady
+                      ? ' (Gemini connected via .dev.vars)'
+                      : ' (set GEMINI_API_KEY in .dev.vars to enable AI)'}
+                    . Changes stay in this browser tab. Reload resets practice data.
                   </>
                 )}
               </span>
@@ -1093,6 +1334,12 @@ export default function Workspace({
               <button className='btn primary' onClick={() => open('ai-settings')}>
                 Connect Gemini
               </button>
+            </div>
+          )}
+          {localOnly && !aiReady && !canConfigureAI && (
+            <div className='notice'>
+              AI chat and planning need <code>GEMINI_API_KEY</code> in <code>.dev.vars</code>. Restart
+              the local server after adding it.
             </div>
           )}
           {!isDemo && view === 'Overview' && (
@@ -1285,17 +1532,13 @@ export default function Workspace({
               </div>
             </>
           )}
-          {!isDemo && view === 'Assignment chat' && localOnly && (
-            <div className='notice'>
-              AI chat and planning need the live workspace. In this local sandbox you can still edit
-              tasks, milestones, availability, and styling.
-            </div>
-          )}
-          {!isDemo && view === 'Assignment chat' && !localOnly && (
+          {!isDemo && view === 'Assignment chat' && (
             <AssignmentChat
-              key={project.id}
+              key={project.id + (localOnly ? ':local' : '')}
               project={project}
               aiReady={aiReady}
+              localDemo={localOnly}
+              userId={user?.id}
               onCreate={() => open('project', { due: future(14) })}
               onBrief={() => {
                 if (requireProject()) open('brief', { description: project.description });
@@ -1304,6 +1547,8 @@ export default function Workspace({
                 if (requireProject()) {
                   open('planner');
                   setRequirements('');
+                  setPlanFiles([]);
+                  setPlanFileIds([]);
                 }
               }}
               onProjectUpdate={(next) => {
@@ -1667,10 +1912,21 @@ export default function Workspace({
       <Dialog
         open={!!modal}
         onOpenChange={(v) => {
-          if (!v && !busy) setModal('');
+          if (v || busy) return;
+          if (modal === 'planner' && plan && planFromCreateId) {
+            void cancelPlanReview();
+            return;
+          }
+          setModal('');
+          setPlan(null);
+          setPlanFromCreateId(null);
         }}
       >
-        <DialogContent className='max-h-[88vh] overflow-y-auto sm:max-w-[520px]'>
+        <DialogContent
+          className={`max-h-[88vh] overflow-x-hidden overflow-y-auto ${
+            modal === 'planner' && plan ? 'sm:max-w-[640px]' : 'sm:max-w-[520px]'
+          }`}
+        >
           <DialogHeader>
             <DialogTitle>
               {
@@ -1682,7 +1938,7 @@ export default function Workspace({
                   task: draft.id ? 'Edit task' : 'Add a task',
                   milestone: 'Add a milestone',
                   member: 'Add a team member',
-                  planner: 'Plan your project',
+                  planner: plan ? 'Review suggested plan' : 'Plan your project',
                   reminders: 'Reminder preferences',
                   profile: 'Your account',
                   remove: 'Remove team member',
@@ -1691,7 +1947,9 @@ export default function Workspace({
             </DialogTitle>
             <DialogDescription>
               {modal === 'planner'
-                ? 'Review the suggested plan before adding it to your project.'
+                ? planFromCreateId
+                  ? 'Customize the plan, then Accept to keep the project — or Cancel to remove it.'
+                  : 'Review the suggested plan before adding it to your project.'
                 : modal === 'project'
                   ? 'Give your group a place to make progress.'
                   : 'Keep your team on the same page.'}
@@ -1806,6 +2064,48 @@ export default function Workspace({
                       onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                       placeholder='What is your group working toward?'
                     />
+                  </label>
+                  <label>
+                    Rubric or instructions (optional)
+                    <textarea
+                      value={draft.rubricPaste || ''}
+                      maxLength={30000}
+                      onChange={(e) => setDraft({ ...draft, rubricPaste: e.target.value })}
+                      placeholder='Paste the assignment rubric or brief for AI to break into tasks…'
+                    />
+                  </label>
+                  <label>
+                    Upload rubric files (optional)
+                    <input
+                      type='file'
+                      multiple
+                      accept={PLAN_FILE_ACCEPT}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          rubricFiles: Array.from(e.target.files || []).slice(0, 3),
+                        })
+                      }
+                    />
+                  </label>
+                  <p className='form-note'>
+                    PDF, DOCX, images, or text — up to 3 files, 5 MB each. If AI is connected, we’ll
+                    suggest tasks after create for you to review.
+                  </p>
+                  {Array.isArray(draft.rubricFiles) && draft.rubricFiles.length > 0 && (
+                    <p className='form-note'>
+                      Selected: {draft.rubricFiles.map((f: File) => f.name).join(', ')}
+                    </p>
+                  )}
+                  <label className='flex gap-2 items-center'>
+                    <input
+                      type='checkbox'
+                      checked={draft.includeMilestones !== false}
+                      onChange={(e) =>
+                        setDraft({ ...draft, includeMilestones: e.target.checked })
+                      }
+                    />
+                    Include milestone suggestions
                   </label>
                 </>
               )}
@@ -1993,20 +2293,7 @@ export default function Workspace({
                 onClick={async () => {
                   setBusy(true);
                   try {
-                    if (!localOnly)
-                      await api('/api/workspace', {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          id: project.id,
-                          name: project.name,
-                          version: project.version,
-                        }),
-                      });
-                    const remaining = projects.filter((p) => p.id !== project.id);
-                    setProjects(remaining);
-                    setProject(remaining[0] || emptyProject);
-                    setFiles([]);
+                    await removeProjectById(project.id, project.name, project.version);
                     setView('Overview');
                     setModal('');
                     toast.success('Project deleted.');
@@ -2052,90 +2339,148 @@ export default function Workspace({
             <div className='form'>
               {!aiReady && (
                 <div className='notice'>
-                  AI planning needs a service connection before it can generate a plan. You can add
-                  tasks manually in the meantime.
+                  {localOnly
+                    ? 'Add GEMINI_API_KEY to .dev.vars and restart the local server to use AI planning.'
+                    : 'AI planning needs a service connection before it can generate a plan. You can add tasks manually in the meantime.'}
                 </div>
               )}
-              <label>
-                Assignment requirements
-                <textarea
-                  value={requirements}
-                  onChange={(e) => setRequirements(e.target.value)}
-                  placeholder='Paste your assignment brief, deliverables, and grading requirements…'
-                  maxLength={30000}
-                />
-              </label>
-              <label>
-                Or import a text file
-                <input
-                  type='file'
-                  accept='.txt,.md,text/plain,text/markdown'
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (f) {
-                      if (f.size > 100000) {
-                        toast.error('Use a text file under 100 KB.');
-                        return;
-                      }
-                      setRequirements((await f.text()).slice(0, 30000));
-                    }
-                  }}
-                />
-              </label>
-              <button
-                className='btn primary'
-                disabled={!aiReady || busy || requirements.trim().length < 30}
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    setPlan(
-                      await api('/api/plan', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ project: project.id, requirements }),
-                      }),
-                    );
-                  } catch (e) {
-                    setError((e as Error).message);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                <Sparkles size={16} />
-                {busy ? 'Planning…' : 'Generate suggested plan'}
-              </button>
-              {plan && (
+              {localOnly && aiReady && (
+                <div className='notice'>
+                  Local demo AI is on — uploads stay in memory and call Gemini from your
+                  .dev.vars key.
+                </div>
+              )}
+              {!plan && (
                 <>
-                  <h3>{plan.tasks.length} suggested tasks</h3>
-                  {plan.tasks.map((t: Task) => (
-                    <div key={t.id} className='form-note'>
-                      <strong>{t.title}</strong>
-                      <br />
-                      {fmt(t.due)} ·{' '}
-                      {project.members.find((m) => m.id === t.assignee)?.name || 'Unassigned'}
-                    </div>
-                  ))}
+                  <label>
+                    Assignment requirements
+                    <textarea
+                      value={requirements}
+                      onChange={(e) => setRequirements(e.target.value)}
+                      placeholder='Paste your assignment brief, deliverables, and grading requirements…'
+                      maxLength={30000}
+                    />
+                  </label>
+                  <label>
+                    Upload rubric files
+                    <input
+                      type='file'
+                      multiple
+                      accept={PLAN_FILE_ACCEPT}
+                      disabled={busy || !project.id}
+                      onChange={async (e) => {
+                        const selected = Array.from(e.target.files || []).slice(0, 3);
+                        if (!selected.length || !project.id) return;
+                        setBusy(true);
+                        setError('');
+                        try {
+                          if (localOnly) {
+                            setPlanFiles(selected);
+                            setPlanFileIds([]);
+                            toast.success(
+                              `Ready ${selected.length} file${selected.length === 1 ? '' : 's'} for local AI planning.`,
+                            );
+                          } else {
+                            const ids = await uploadPlanFiles(project.id, selected);
+                            setPlanFileIds(ids);
+                            setPlanFiles([]);
+                            toast.success(
+                              `Uploaded ${ids.length} file${ids.length === 1 ? '' : 's'} for planning.`,
+                            );
+                          }
+                        } catch (err) {
+                          setError((err as Error).message);
+                        } finally {
+                          setBusy(false);
+                          e.target.value = '';
+                        }
+                      }}
+                    />
+                  </label>
+                  {!!(localOnly ? planFiles.length : planFileIds.length) && (
+                    <p className='form-note'>
+                      {(localOnly ? planFiles.length : planFileIds.length)} file
+                      {(localOnly ? planFiles.length : planFileIds.length) === 1 ? '' : 's'} ready
+                      for AI
+                      {localOnly && planFiles.length
+                        ? `: ${planFiles.map((f) => f.name).join(', ')}`
+                        : '.'}
+                    </p>
+                  )}
+                  <label className='flex gap-2 items-center'>
+                    <input
+                      type='checkbox'
+                      checked={includeMilestones}
+                      onChange={(e) => setIncludeMilestones(e.target.checked)}
+                    />
+                    Include milestone suggestions
+                  </label>
                   <button
                     className='btn primary'
-                    disabled={busy}
+                    disabled={
+                      !aiReady ||
+                      busy ||
+                      (requirements.trim().length < 30 &&
+                        !(localOnly ? planFiles.length : planFileIds.length))
+                    }
                     onClick={async () => {
-                      if (
-                        await save({
-                          ...project,
-                          description: requirements,
-                          tasks: [...project.tasks, ...plan.tasks],
-                          milestones: [...project.milestones, ...plan.milestones],
-                        })
-                      ) {
-                        setModal('');
-                        toast.success('Plan added. You can edit any task.');
+                      setBusy(true);
+                      setError('');
+                      try {
+                        setPlan(
+                          await requestPlan(
+                            project.id,
+                            requirements,
+                            planFileIds,
+                            includeMilestones,
+                            project,
+                            planFiles,
+                          ),
+                        );
+                      } catch (err) {
+                        setError((err as Error).message);
+                      } finally {
+                        setBusy(false);
                       }
                     }}
                   >
-                    Add plan to project
+                    <Sparkles size={16} />
+                    {busy ? 'Planning…' : 'Generate suggested plan'}
                   </button>
                 </>
+              )}
+              {plan && (
+                <PlanReview
+                  plan={plan}
+                  members={project.members}
+                  busy={busy}
+                  cancelDeletesProject={!!planFromCreateId}
+                  onChange={setPlan}
+                  onAccept={() => void acceptSuggestedPlan()}
+                  onCancel={() => void cancelPlanReview()}
+                  onRegenerate={() => {
+                    void (async () => {
+                      setBusy(true);
+                      setError('');
+                      try {
+                        setPlan(
+                          await requestPlan(
+                            project.id,
+                            requirements,
+                            planFileIds,
+                            includeMilestones,
+                            project,
+                            planFiles,
+                          ),
+                        );
+                      } catch (err) {
+                        setError((err as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    })();
+                  }}
+                />
               )}
             </div>
           )}
