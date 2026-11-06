@@ -476,7 +476,7 @@ export default function Workspace({
     let active = true;
     fetch('/api/push')
       .then(async (response) => {
-        const data = await response.json();
+        const data: any = await response.json();
         if (active && response.ok)
           setPushSettings({
             enabled: !!data.enabled,
