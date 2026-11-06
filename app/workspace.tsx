@@ -1488,9 +1488,23 @@ export default function Workspace({
                   </a>
                 ))}
               {!loading && !localOnly && (
-                <Link className='btn' href='/demo/overview'>
+                <a
+                  className='btn'
+                  href='/demo/overview'
+                  onClick={(e) => {
+                    e.preventDefault();
+                    try {
+                      window.sessionStorage.removeItem(DEMO_SESSION_KEY);
+                      window.sessionStorage.removeItem(startupNoticeKey);
+                      window.sessionStorage.removeItem(WORKSPACE_VIEW_KEY);
+                    } catch {
+                      // Ignore unavailable browser storage.
+                    }
+                    window.location.assign('/demo/overview');
+                  }}
+                >
                   Try demo — no sign-in needed
-                </Link>
+                </a>
               )}
               {!loading && user && (
                 <small>
