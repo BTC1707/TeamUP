@@ -254,3 +254,20 @@ export const notifications = sqliteTable(
   },
   (t) => [index('notification_user_created').on(t.userId, t.createdAt)],
 );
+export const passwordResetTokens = sqliteTable(
+  'password_reset_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    tokenHash: text('token_hash').notNull(),
+    createdAt: text('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    usedAt: text('used_at'),
+  },
+  (t) => [
+    uniqueIndex('password_reset_token_hash').on(t.tokenHash),
+    index('password_reset_user').on(t.userId),
+  ],
+);

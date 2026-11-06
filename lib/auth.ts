@@ -24,7 +24,10 @@ export type SessionUser = {
 
 /** Cookie name sent to the browser after a successful sign-in / sign-up. */
 export const SESSION_COOKIE = 'teamup_session';
-const SESSION_DAYS = 30;
+/** Long-lived session when “Remember me” is checked (and for new sign-ups). */
+export const SESSION_REMEMBER_DAYS = 30;
+/** Shorter token lifetime when “Remember me” is unchecked. */
+export const SESSION_TEMPORARY_HOURS = 12;
 
 const USERNAME_RE = /^[a-z0-9_]{3,24}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -235,12 +238,20 @@ export function validateSignIn(input: {
   return { ok: true, email: null, username: usernameResult.username, password };
 }
 
-export async function createSessionToken(email: string, name: string) {
+export async function createSessionToken(
+  email: string,
+  name: string,
+  opts?: { remember?: boolean },
+) {
+  const remember = opts?.remember !== false;
+  const ttlMs = remember
+    ? SESSION_REMEMBER_DAYS * 24 * 60 * 60 * 1000
+    : SESSION_TEMPORARY_HOURS * 60 * 60 * 1000;
   const payload: SessionPayload = {
     e: normalizeEmail(email),
     n: name,
     i: 'email:' + normalizeEmail(email),
-    exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
+    exp: Date.now() + ttlMs,
   };
   const body = toBase64Url(encoder().encode(JSON.stringify(payload)));
   return `${body}.${await sign(body)}`;
@@ -287,11 +298,20 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   return readSessionToken(parseCookie(requestHeaders.get('cookie'), SESSION_COOKIE));
 }
 
-export function sessionCookieHeader(token: string, secure: boolean) {
-  const maxAge = SESSION_DAYS * 24 * 60 * 60;
-  return `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${
-    secure ? '; Secure' : ''
-  }`;
+export function sessionCookieHeader(
+  token: string,
+  secure: boolean,
+  opts?: { remember?: boolean },
+) {
+  const remember = opts?.remember !== false;
+  const base = `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`;
+  const secureFlag = secure ? '; Secure' : '';
+  if (!remember) {
+    // Browser session cookie — cleared when the browser quits.
+    return `${base}${secureFlag}`;
+  }
+  const maxAge = SESSION_REMEMBER_DAYS * 24 * 60 * 60;
+  return `${base}; Max-Age=${maxAge}${secureFlag}`;
 }
 
 export function clearSessionCookieHeader(secure: boolean) {

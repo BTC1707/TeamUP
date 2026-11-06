@@ -2367,6 +2367,39 @@ body.tutorial-running .app-main {
   margin-top: 4px;
   justify-content: center;
 }
+.auth-form-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: -2px;
+}
+.auth-check {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 550;
+  color: #4a5163;
+  cursor: pointer;
+}
+.auth-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: #5b54d9;
+}
+.auth-forgot {
+  font-size: 13px;
+  font-weight: 600;
+  color: #5b54d9;
+  text-decoration: none;
+}
+.auth-forgot:hover {
+  text-decoration: underline;
+}
 .auth-error {
   margin: 0;
   padding: 10px 12px;
@@ -2374,6 +2407,17 @@ body.tutorial-running .app-main {
   background: #fff0f1;
   border: 1px solid #ffd9dd;
   color: #ab3747;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 500;
+}
+.auth-success {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eefaf3;
+  border: 1px solid #c6ebd4;
+  color: #1f6b45;
   font-size: 13px;
   line-height: 1.45;
   font-weight: 500;

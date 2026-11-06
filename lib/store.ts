@@ -158,6 +158,20 @@ export async function createPasswordUser(
 
   return { userId: id, authUserId: input.authId, email: input.email, displayName: input.name };
 }
+
+/** Replace a user's password hash (password-reset flow). */
+export async function updateUserPasswordHash(
+  db: D1Database,
+  userId: string,
+  passwordHash: string,
+) {
+  const result = await db
+    .prepare('UPDATE users SET password_hash=? WHERE id=?')
+    .bind(passwordHash, userId)
+    .run();
+  if (!result.meta.changes) throw new Error('NOT_FOUND');
+}
+
 export async function authorized(db: D1Database, id: string, u: Actor) {
   return db
     .prepare(

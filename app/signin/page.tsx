@@ -8,9 +8,12 @@
  * Prefer keeping handleSubmit + signInAccount as-is so auth keeps working.
  *
  * On localhost, a hardcoded test account works (admin / teamup) — local DB only.
+ *
+ * Forgot-password link is gated by SHOW_FORGOT_PASSWORD in lib/auth-features.ts.
  */
 
 import { FormEvent, useEffect, useState } from 'react';
+import { SHOW_FORGOT_PASSWORD } from '../../lib/auth-features';
 import {
   DEFAULT_AFTER_AUTH_PATH,
   readReturnToParam,
@@ -20,6 +23,7 @@ import {
 export default function SignInPage() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showLocalHint, setShowLocalHint] = useState(false);
@@ -38,6 +42,7 @@ export default function SignInPage() {
       const { returnTo } = await signInAccount({
         login,
         password,
+        remember,
         returnTo: readReturnToParam(),
       });
       try {
@@ -98,6 +103,23 @@ export default function SignInPage() {
               placeholder='Your password'
             />
           </label>
+
+          <div className='auth-form-meta'>
+            <label className='auth-check'>
+              <input
+                type='checkbox'
+                name='remember'
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
+              Remember me
+            </label>
+            {SHOW_FORGOT_PASSWORD ? (
+              <a className='auth-forgot' href='/forgot-password'>
+                Forgot your password?
+              </a>
+            ) : null}
+          </div>
 
           {error ? (
             <p className='auth-error' role='alert'>

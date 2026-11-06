@@ -116,6 +116,39 @@ export function nudgeEmailContent(opts: {
   return { subject, text, html };
 }
 
+export function passwordResetEmailContent(opts: {
+  name: string;
+  resetUrl: string;
+  expiresAt: number;
+}) {
+  const when = new Date(opts.expiresAt).toLocaleString('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+  const subject = 'Reset your TeamUP password';
+  const text = [
+    `Hi ${opts.name},`,
+    '',
+    'We received a request to reset your TeamUP password.',
+    '',
+    'Open this link to choose a new password:',
+    opts.resetUrl,
+    '',
+    `This link expires ${when}.`,
+    '',
+    'If you did not ask for a reset, you can ignore this email.',
+  ].join('\n');
+  const html = `
+    <p>Hi ${escapeHtml(opts.name)},</p>
+    <p>We received a request to reset your TeamUP password.</p>
+    <p><a href="${escapeAttr(opts.resetUrl)}">Choose a new password</a></p>
+    <p style="color:#5c6370;font-size:13px">Or paste this link into your browser:<br/>
+    ${escapeHtml(opts.resetUrl)}</p>
+    <p style="color:#5c6370;font-size:13px">This link expires ${escapeHtml(when)}.</p>
+  `.trim();
+  return { subject, text, html };
+}
+
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, '&amp;')

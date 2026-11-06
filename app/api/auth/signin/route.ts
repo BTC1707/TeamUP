@@ -32,6 +32,7 @@ export async function POST(req: Request) {
       email?: string;
       username?: string;
       password?: string;
+      remember?: boolean;
       returnTo?: string;
     };
 
@@ -41,6 +42,7 @@ export async function POST(req: Request) {
       (typeof body.username === 'string' && body.username) ||
       '';
     const rawPassword = typeof body.password === 'string' ? body.password : '';
+    const remember = body.remember !== false;
 
     // Localhost-only test account → blank workspace on the local DB, not production.
     if (isLocalDevHost(req) && matchesLocalDevAccount(rawLogin, rawPassword)) {
@@ -55,11 +57,13 @@ export async function POST(req: Request) {
         passwordHash,
       });
 
-      const token = await createSessionToken(LOCAL_DEV_ACCOUNT.email, LOCAL_DEV_ACCOUNT.name);
+      const token = await createSessionToken(LOCAL_DEV_ACCOUNT.email, LOCAL_DEV_ACCOUNT.name, {
+        remember,
+      });
       const secure = new URL(req.url).protocol === 'https:';
       return Response.json(
         { ok: true, returnTo: safeReturnPath(body.returnTo) },
-        { headers: { 'Set-Cookie': sessionCookieHeader(token, secure) } },
+        { headers: { 'Set-Cookie': sessionCookieHeader(token, secure, { remember }) } },
       );
     }
 
@@ -92,14 +96,14 @@ export async function POST(req: Request) {
       return Response.json({ error: INVALID }, { status: 401 });
     }
 
-    const token = await createSessionToken(user.email, user.name);
+    const token = await createSessionToken(user.email, user.name, { remember });
     const secure = new URL(req.url).protocol === 'https:';
 
     return Response.json(
       { ok: true, returnTo: safeReturnPath(body.returnTo) },
       {
         headers: {
-          'Set-Cookie': sessionCookieHeader(token, secure),
+          'Set-Cookie': sessionCookieHeader(token, secure, { remember }),
         },
       },
     );
