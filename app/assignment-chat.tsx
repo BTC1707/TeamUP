@@ -1,6 +1,13 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { Sparkles, Send, FileText, CheckSquare, MessageCircle } from 'lucide-react';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import type { Milestone, Project, Task } from '@/lib/model';
 
 type Message = { id: string; role: 'user' | 'assistant'; content: string };
@@ -159,10 +166,55 @@ export default function AssignmentChat({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
   const latest = useRef<HTMLDivElement>(null);
   const requestId = useRef<string | null>(null);
   const isDemo = !project.id;
   const chatEndpoint = localDemo ? '/api/chat/demo' : '/api/chat';
+
+  function openBrief() {
+    setContextOpen(false);
+    onBrief();
+  }
+
+  function openPlan() {
+    setContextOpen(false);
+    onPlan();
+  }
+
+  const contextPanel = (
+    <>
+      <section className='panel chat-context-panel'>
+        <div className='panel-heading'>
+          <h2>Assignment context</h2>
+          <FileText size={19} color='#8274c9' />
+        </div>
+        <div className='context-body'>
+          <h3>{project.name}</h3>
+          <p>
+            {project.description ||
+              'Add your assignment brief so AI can give more specific answers.'}
+          </p>
+          <button type='button' className='btn' onClick={openBrief}>
+            Edit assignment brief
+          </button>
+          <small>
+            AI can reference your brief, tasks, milestones, and recent project files. You can also
+            ask it to edit tasks, milestones, the brief, reminders, and availability — with
+            confirmation before anything is saved.
+          </small>
+        </div>
+      </section>
+      <section className='planner-card'>
+        <CheckSquare size={25} />
+        <h2>Ready to make a plan?</h2>
+        <p>Turn the assignment requirements into tasks and milestones you can review.</p>
+        <button type='button' className='btn' onClick={openPlan}>
+          Open AI planner <Sparkles size={15} />
+        </button>
+      </section>
+    </>
+  );
   const timeZone =
     typeof Intl !== 'undefined'
       ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -314,16 +366,26 @@ export default function AssignmentChat({
     <div className='chat-layout'>
       <section className='panel chat-panel'>
         <div className='panel-heading'>
-          <div className='flex items-center gap-3'>
+          <div className='flex items-center gap-3 min-w-0'>
             <span className='stat-icon'>
               <MessageCircle size={20} />
             </span>
-            <div>
+            <div className='min-w-0'>
               <h2>Assignment chat</h2>
               <p className='subtext !mt-1'>A place to work through the details.</p>
             </div>
           </div>
-          <span className='status'>{aiReady ? 'AI connected' : 'Setup pending'}</span>
+          <div className='chat-heading-actions'>
+            <button
+              type='button'
+              className='btn chat-context-trigger'
+              onClick={() => setContextOpen(true)}
+            >
+              <FileText size={15} />
+              Context
+            </button>
+            <span className='status'>{aiReady ? 'AI connected' : 'Setup pending'}</span>
+          </div>
         </div>
         <div className='chat-messages' aria-live='polite' aria-busy={busy || loading}>
           {loading ? (
@@ -444,37 +506,18 @@ export default function AssignmentChat({
           brief.
         </p>
       </section>
-      <aside className='stack'>
-        <section className='panel'>
-          <div className='panel-heading'>
-            <h2>Assignment context</h2>
-            <FileText size={19} color='#8274c9' />
-          </div>
-          <div className='context-body'>
-            <h3>{project.name}</h3>
-            <p>
-              {project.description ||
-                'Add your assignment brief so AI can give more specific answers.'}
-            </p>
-            <button className='btn' onClick={onBrief}>
-              Edit assignment brief
-            </button>
-            <small>
-              AI can reference your brief, tasks, milestones, and up to 3 recent TXT, Markdown, or
-              CSV files under 100 KB each. You can also ask it to edit tasks, milestones, the brief,
-              reminders, and availability — with confirmation before anything is saved.
-            </small>
-          </div>
-        </section>
-        <section className='planner-card'>
-          <CheckSquare size={25} />
-          <h2>Ready to make a plan?</h2>
-          <p>Turn the assignment requirements into tasks and milestones you can review.</p>
-          <button className='btn' onClick={onPlan}>
-            Open AI planner <Sparkles size={15} />
-          </button>
-        </section>
-      </aside>
+      <aside className='stack chat-aside-desktop'>{contextPanel}</aside>
+      <Dialog open={contextOpen} onOpenChange={setContextOpen}>
+        <DialogContent className='chat-context-dialog max-h-[88vh] overflow-y-auto sm:max-w-[420px]'>
+          <DialogHeader>
+            <DialogTitle>Assignment context</DialogTitle>
+            <DialogDescription>
+              Review the brief and open planning tools for this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className='chat-context-dialog-body stack'>{contextPanel}</div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
