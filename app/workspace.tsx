@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import AssignmentChat from './assignment-chat';
 import ConnectAI from './connect-ai';
