@@ -2069,8 +2069,19 @@ body.tutorial-running .app-main {
   margin: 0;
 }
 .landing-start {
-  scroll-margin-top: 24px;
-  padding: 40px clamp(20px, 5vw, 64px) 72px;
+  position: relative;
+  scroll-margin-top: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 56px clamp(20px, 5vw, 64px);
+  padding-bottom: clamp(72px, 10vw, 96px);
+  box-sizing: border-box;
+}
+.landing-start-inner {
+  width: 100%;
 }
 .landing-start-heading {
   max-width: 760px;
@@ -2169,7 +2180,16 @@ body.tutorial-running .app-main {
   font-weight: 550;
 }
 .landing-faq {
-  padding: 64px clamp(20px, 5vw, 64px) 72px;
+  position: relative;
+  scroll-margin-top: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px clamp(20px, 5vw, 64px);
+  padding-bottom: 72px;
+  box-sizing: border-box;
   background: rgb(255 255 255 / 58%);
   border-block: 1px solid #e8e8f0;
 }
@@ -2379,10 +2399,15 @@ body.tutorial-running .app-main {
   .landing-page .landing-cta-row .btn.subtle {
     flex-basis: 100%;
   }
-  .landing-about {
+  .landing-about,
+  .landing-start,
+  .landing-faq {
     min-height: 100vh;
     min-height: 100dvh;
     padding-top: 48px;
+  }
+  .landing-start-steps {
+    grid-template-columns: 1fr;
   }
 }
 
