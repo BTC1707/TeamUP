@@ -110,6 +110,94 @@ function getLocalAdminSessionSnapshot() {
 }
 const fmt = (d: string) =>
   new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const GOOGLE_CALENDAR_FREEBUSY_SCOPE = 'https://www.googleapis.com/auth/calendar.freebusy';
+type GoogleTokenResponse = {
+  access_token?: string;
+  error?: string;
+  error_description?: string;
+};
+type GoogleCalendarBusyInterval = { start: string; end: string };
+type GoogleFreeBusyResponse = {
+  calendars?: Record<
+    string,
+    { busy?: GoogleCalendarBusyInterval[]; errors?: { reason: string }[] }
+  >;
+  error?: { message?: string };
+};
+type GoogleIdentityServices = {
+  accounts: {
+    oauth2: {
+      initTokenClient: (options: {
+        client_id: string;
+        scope: string;
+        callback: (response: GoogleTokenResponse) => void;
+        error_callback?: (error: { type: string; message?: string }) => void;
+      }) => { requestAccessToken: () => void };
+    };
+  };
+};
+declare global {
+  interface Window {
+    google?: GoogleIdentityServices;
+  }
+}
+let googleIdentityScriptPromise: Promise<void> | null = null;
+function loadGoogleIdentityServices() {
+  if (window.google?.accounts.oauth2) return Promise.resolve();
+  if (!googleIdentityScriptPromise) {
+    googleIdentityScriptPromise = new Promise<void>((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = () =>
+        window.google?.accounts.oauth2
+          ? resolve()
+          : reject(new Error('Google sign-in could not be loaded.'));
+      script.onerror = () => reject(new Error('Google sign-in could not be loaded.'));
+      document.head.appendChild(script);
+    }).catch((error) => {
+      googleIdentityScriptPromise = null;
+      throw error;
+    });
+  }
+  return googleIdentityScriptPromise;
+}
+function requestGoogleCalendarAccessToken(clientId: string) {
+  return new Promise<string>((resolve, reject) => {
+    const oauth2 = window.google?.accounts.oauth2;
+    if (!oauth2) {
+      reject(new Error('Google sign-in is not ready. Please try again.'));
+      return;
+    }
+    const client = oauth2.initTokenClient({
+      client_id: clientId,
+      scope: GOOGLE_CALENDAR_FREEBUSY_SCOPE,
+      callback: (response) => {
+        if (response.error || !response.access_token) {
+          reject(
+            new Error(
+              response.error_description || response.error || 'Google Calendar access was not granted.',
+            ),
+          );
+          return;
+        }
+        resolve(response.access_token);
+      },
+      error_callback: (error) =>
+        reject(new Error(error.message || 'Google sign-in was closed before it finished.')),
+    });
+    client.requestAccessToken();
+  });
+}
+const formatAvailabilityRange = (startHour: number, endHour: number) => {
+  const hourLabel = (hour: number) => hour % 12 || 12;
+  const startPeriod = startHour >= 12 ? 'PM' : 'AM';
+  const endPeriod = endHour >= 12 ? 'PM' : 'AM';
+  return startPeriod === endPeriod
+    ? `${hourLabel(startHour)}–${hourLabel(endHour)} ${startPeriod}`
+    : `${hourLabel(startHour)} ${startPeriod}–${hourLabel(endHour)} ${endPeriod}`;
+};
 const uid = () => crypto.randomUUID();
 function Picker({
   value,
@@ -207,6 +295,11 @@ export default function Workspace({
   const [filter, setFilter] = useState('active');
   const [milestoneFilter, setMilestoneFilter] = useState('all');
   const [availabilityView, setAvailabilityView] = useState<'calendar' | 'overlap'>('calendar');
+  const [googleCalendarClientId, setGoogleCalendarClientId] = useState('');
+  const [googleCalendarConfigLoaded, setGoogleCalendarConfigLoaded] = useState(false);
+  const [googleIdentityReady, setGoogleIdentityReady] = useState(false);
+  const [googleIdentityLoadError, setGoogleIdentityLoadError] = useState('');
+  const [googleCalendarSyncBusy, setGoogleCalendarSyncBusy] = useState(false);
   const [draft, setDraft] = useState<any>({});
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
@@ -252,10 +345,63 @@ export default function Workspace({
     setStartupNoticeReady(true);
   }, [startupNoticeKey]);
 
+  useEffect(() => {
+    if (view !== 'Availability') return;
+    let active = true;
+    fetch('/api/google-calendar/config', { cache: 'no-store' })
+      .then(async (response) => {
+        const data: { clientId?: string; error?: string } = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Google Calendar is unavailable.');
+        return data.clientId || '';
+      })
+      .then(async (clientId) => {
+        if (!active) return;
+        setGoogleCalendarClientId(clientId);
+        setGoogleCalendarConfigLoaded(true);
+        if (clientId) {
+          await loadGoogleIdentityServices();
+          if (active) setGoogleIdentityReady(true);
+        }
+      })
+      .catch((loadError) => {
+        if (!active) return;
+        setGoogleIdentityLoadError((loadError as Error).message);
+        setGoogleCalendarConfigLoaded(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [view]);
+
   const today = future(0);
+  const me = user?.id || '';
+  const rangeEvaluationTime = new Date();
+  const availabilityRangeLabels = Array.from({ length: 7 }, (_, dayIndex) => {
+    const date = future(dayIndex);
+    const selectedSlots = new Set(project.availability[me] || []);
+    const labels = new Map<number, string>();
+    const isAvailable = (hour: number) => {
+      const key = new Date(
+        date + 'T' + String(hour).padStart(2, '0') + ':00',
+      ).toISOString();
+      return selectedSlots.has(key) && new Date(key) >= rangeEvaluationTime;
+    };
+
+    for (let hour = 7; hour <= 22; ) {
+      if (!isAvailable(hour)) {
+        hour++;
+        continue;
+      }
+      const startHour = hour;
+      while (hour <= 22 && isAvailable(hour)) hour++;
+      const endHour = hour;
+      const centerHour = startHour + Math.floor((endHour - startHour - 1) / 2);
+      labels.set(centerHour, formatAvailabilityRange(startHour, endHour));
+    }
+    return labels;
+  });
   const done = project.tasks.filter((t) => t.status === 'done').length;
   const percent = Math.round((done / Math.max(1, project.tasks.length)) * 100);
-  const me = user?.id || '';
   const mine = project.tasks.filter((t) => t.assignee === me && t.status !== 'done');
   const isOwner = !isDemo && project.owner === user?.id;
 
@@ -877,6 +1023,84 @@ export default function Workspace({
       return false;
     }
     return true;
+  }
+  async function syncGoogleCalendar() {
+    if (!requireProject()) return;
+    if (!googleCalendarClientId) {
+      toast.error('Google Calendar sync needs an OAuth client ID. See docs/google-calendar-sync.md.');
+      return;
+    }
+    if (!googleIdentityReady) {
+      toast.error(googleIdentityLoadError || 'Google sign-in is still loading. Please try again.');
+      return;
+    }
+
+    setGoogleCalendarSyncBusy(true);
+    try {
+      // Request this during the click so Google can open its consent popup.
+      const accessToken = await requestGoogleCalendarAccessToken(googleCalendarClientId);
+      const visibleDates = Array.from({ length: 7 }, (_, index) => future(index));
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const response = await fetch('https://www.googleapis.com/calendar/v3/freeBusy', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          timeMin: new Date(`${visibleDates[0]}T00:00:00`).toISOString(),
+          timeMax: new Date(`${future(7)}T00:00:00`).toISOString(),
+          timeZone,
+          items: [{ id: 'primary' }],
+        }),
+      });
+      const data: GoogleFreeBusyResponse = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error?.message || 'Google Calendar could not return your busy times.');
+      }
+      const primaryCalendar = data.calendars?.primary;
+      if (!primaryCalendar || primaryCalendar.errors?.length) {
+        throw new Error('Could not read free/busy information from your primary Google Calendar.');
+      }
+
+      const busyIntervals = (primaryCalendar.busy || []).map((interval) => ({
+        start: Date.parse(interval.start),
+        end: Date.parse(interval.end),
+      }));
+      const syncStartedAt = new Date();
+      const visibleSlotKeys = new Set<string>();
+      const freeSlotKeys: string[] = [];
+      for (const date of visibleDates) {
+        for (let hour = 7; hour <= 22; hour++) {
+          const localStart = new Date(`${date}T${String(hour).padStart(2, '0')}:00:00`);
+          const localEnd = new Date(`${date}T${String(hour + 1).padStart(2, '0')}:00:00`);
+          const slotKey = localStart.toISOString();
+          visibleSlotKeys.add(slotKey);
+          if (localStart < syncStartedAt) continue;
+          const slotIsBusy = busyIntervals.some(
+            (interval) => interval.start < localEnd.getTime() && interval.end > localStart.getTime(),
+          );
+          if (!slotIsBusy) freeSlotKeys.push(slotKey);
+        }
+      }
+
+      const existingAvailability = project.availability[me] || [];
+      const nextAvailability = [
+        ...existingAvailability.filter((slot) => !visibleSlotKeys.has(slot)),
+        ...freeSlotKeys,
+      ];
+      const saved = await save({
+        ...project,
+        availability: { ...project.availability, [me]: nextAvailability },
+      });
+      if (saved) {
+        toast.success('Google Calendar synced. Free hours are selected for the next 7 days.');
+      }
+    } catch (syncError) {
+      toast.error((syncError as Error).message || 'Unable to sync Google Calendar.');
+    } finally {
+      setGoogleCalendarSyncBusy(false);
+    }
   }
   async function setStatus(t: Task) {
     if (!requireProject()) return;
@@ -1831,7 +2055,7 @@ export default function Workspace({
                 Select the times you’re available over the next 7 days. Times use your device’s
                 local timezone. Outlined slots work for everyone who has added availability.
               </div>
-              <section className='panel'>
+              <section className='panel availability-panel'>
                 <div className='panel-heading'>
                   <h2>Find time together</h2>
                   <span className='subtext'>
@@ -1844,11 +2068,21 @@ export default function Workspace({
                     value={availabilityView}
                     onValueChange={(value) => setAvailabilityView(value as 'calendar' | 'overlap')}
                   >
-                    <TabsList>
+                    <TabsList className='bg-[#dbd9fc] task-filter-tabs'>
                       <TabsTrigger value='calendar'>My calendar</TabsTrigger>
                       <TabsTrigger value='overlap'>Team overlap</TabsTrigger>
                     </TabsList>
                   </Tabs>
+                  <button
+                    type='button'
+                    className='btn availability-sync-button'
+                    disabled={busy || googleCalendarSyncBusy || !googleCalendarConfigLoaded}
+                    title='Check busy times on your primary Google Calendar and select free hours for the displayed week.'
+                    onClick={syncGoogleCalendar}
+                  >
+                    <CalendarDays size={16} />
+                    {googleCalendarSyncBusy ? 'Syncing...' : 'Sync Google Calendar'}
+                  </button>
                   {availabilityView === 'overlap' && (
                     <p className='availability-overlap-note'>
                       Hours are highlighted only when every teammate with a saved schedule is free.
@@ -1861,13 +2095,26 @@ export default function Workspace({
                       At least two teammates need to add availability to show overlapping hours.
                     </div>
                   )}
+                <div className='schedule-viewport'>
                 <div className='schedule'>
-                  <span />
-                  {Array.from({ length: 7 }, (_, i) => (
-                    <div className='day' key={`date-${i}`}>
-                      {fmt(future(i))}
-                    </div>
-                  ))}
+                  <span className='schedule-corner' />
+                  {Array.from({ length: 7 }, (_, i) => {
+                    const dateValue = future(i);
+                    const date = new Date(dateValue + 'T12:00:00');
+                    const weekdayAndMonth = date.toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      month: 'short',
+                    });
+                    const isToday = dateValue === today;
+                    return (
+                      <div className='day' key={`date-${i}`}>
+                        <span className='day-name'>{weekdayAndMonth}</span>
+                        <span className={`day-number${isToday ? ' today' : ''}`}>
+                          {date.getDate()}
+                        </span>
+                      </div>
+                    );
+                  })}
                   {Array.from({ length: 16 }, (_, i) => i + 7).map((hour) => (
                     <div className='contents' key={hour}>
                       <span className='time'>
@@ -1880,6 +2127,10 @@ export default function Workspace({
                         ).toISOString();
                         const past = new Date(key) < new Date();
                         const selected = (project.availability[me] || []).includes(key);
+                        const rangeLabel =
+                          availabilityView === 'calendar' && !past
+                            ? availabilityRangeLabels[i].get(hour)
+                            : undefined;
                         const schedules = Object.values(project.availability).filter(
                           (a) => a.length,
                         );
@@ -1888,7 +2139,7 @@ export default function Workspace({
                         return (
                           <button
                             key={key}
-                            aria-label={`${fmt(future(i))} at ${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}${past ? ', time has passed' : ''}`}
+                            aria-label={`${fmt(future(i))} at ${hour % 12 || 12}:00 ${hour < 12 ? 'AM' : 'PM'}${rangeLabel ? `, available ${rangeLabel}` : ''}${past ? ', time has passed' : ''}`}
                             aria-pressed={selected}
                             disabled={busy || past || availabilityView === 'overlap'}
                             className={
@@ -1914,7 +2165,11 @@ export default function Workspace({
                             {past ? (
                               <LockKeyhole size={14} className='availability-lock mx-auto' aria-hidden='true' />
                             ) : selected ? (
-                              <Check size={14} className='mx-auto' />
+                              rangeLabel ? (
+                                <span className='slot-range-label'>{rangeLabel}</span>
+                              ) : (
+                                <Check size={14} className='mx-auto' />
+                              )
                             ) : (
                               ''
                             )}
@@ -1923,14 +2178,7 @@ export default function Workspace({
                       })}
                     </div>
                   ))}
-                  <span />
-                  {Array.from({ length: 7 }, (_, i) => (
-                    <div className='day-of-week' key={`weekday-${i}`}>
-                      {new Date(future(i) + 'T12:00:00').toLocaleDateString('en-US', {
-                        weekday: 'short',
-                      })}
-                    </div>
-                  ))}
+                </div>
                 </div>
               </section>
             </>
