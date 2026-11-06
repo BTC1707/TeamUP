@@ -162,6 +162,24 @@ git push -u origin HEAD  # then open a PR
 - Use the **same email** teammates invite you with
 - Live-site data persists in Cloudflare D1 (refresh won’t wipe it)
 
+## Email invites and nudges (Resend)
+
+TeamUP can email project invitation links and teammate nudges through [Resend](https://resend.com) (free tier is enough for class projects). Create an API key, verify a sending domain (or use `onboarding@resend.dev` for self-tests), then set:
+
+```text
+RESEND_API_KEY=<your key>
+EMAIL_FROM=TeamUP <noreply@your-verified-domain>
+```
+
+For local development, put these in the ignored `.dev.vars` file. For production:
+
+```bash
+npx wrangler secret put RESEND_API_KEY
+npx wrangler secret put EMAIL_FROM
+```
+
+Owners can **Send invite email** from Project settings, or add a teammate by email (an invite is emailed automatically when Resend is configured). **Nudge** on the Team page tries browser push and email; it succeeds if either channel delivers.
+
 ## Browser push nudges
 
 Team members can enable push notifications in their account settings, then use **Nudge** next to a teammate on the Team page. Push subscriptions are stored per user and device in D1. A VAPID keypair is required for each deployment before browser subscriptions can be created.
@@ -174,7 +192,7 @@ VAPID_SERVER_PRIVATE_KEY=<printed private key>
 VAPID_SUBJECT=https://teamup.landonpack7-teamup.workers.dev
 ```
 
-Use `npx wrangler secret put VAPID_SERVER_PUBLIC_KEY`, `npx wrangler secret put VAPID_SERVER_PRIVATE_KEY`, and `npx wrangler secret put VAPID_SUBJECT`; enter each value at its prompt. Never commit `.dev.vars` or share the private key. Deploy the app and run `npm run cf:migrate` so D1 has the `push_subscriptions` table. Each teammate must enable browser notifications on each device and grant permission before they can receive nudges.
+Use `npx wrangler secret put VAPID_SERVER_PUBLIC_KEY`, `npx wrangler secret put VAPID_SERVER_PRIVATE_KEY`, and `npx wrangler secret put VAPID_SUBJECT`; enter each value at its prompt. Never commit `.dev.vars` or share the private key. Deploy the app and run `npm run cf:migrate` so D1 has the `push_subscriptions` table. Each teammate must enable browser notifications on each device and grant permission before they can receive push nudges (email nudges still work when Resend is configured).
 
 ---
 

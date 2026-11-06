@@ -70,10 +70,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 import { emptyProject, future, type Project, type Task, type Member } from '@/lib/model';
 import { workspacePathByView, workspaceViewByPath } from '@/lib/workspace-routes';
+import {
+  localNudgeNotification,
+  localTaskActivityNotifications,
+  type AppNotification,
+} from '@/lib/notifications';
 const nav = [
   ['Overview', LayoutDashboard],
   ['Assignment chat', Sparkles],
@@ -205,8 +211,11 @@ export default function Workspace({
   const [draft, setDraft] = useState<any>({});
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
+  const [emailReady, setEmailReady] = useState(false);
   const [pushSettings, setPushSettings] = useState({ enabled: false, publicKey: '', subscribed: false });
   const [pushBusy, setPushBusy] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notifOpen, setNotifOpen] = useState(false);
   const [plan, setPlan] = useState<SuggestedPlan | null>(null);
   const [requirements, setRequirements] = useState('');
   const [planFileIds, setPlanFileIds] = useState<string[]>([]);
@@ -378,14 +387,73 @@ export default function Workspace({
       setPushBusy(false);
     }
   }
-  async function nudgeTeammate(recipientId: string) {
+  async function loadNotifications() {
+    if (localOnly || demoMode) return;
     try {
-      await api('/api/push', {
+      const r = await fetch('/api/notifications');
+      const data: any = await r.json();
+      if (!r.ok) return;
+      setNotifications(Array.isArray(data.notifications) ? data.notifications : []);
+    } catch {
+      // Keep the last known inbox if the request fails.
+    }
+  }
+
+  async function markNotifications(action: 'read' | 'readAll', ids?: string[]) {
+    if (localOnly || demoMode) {
+      setNotifications((current) =>
+        current.map((n) =>
+          action === 'readAll' || (ids || []).includes(n.id) ? { ...n, read: true } : n,
+        ),
+      );
+      return;
+    }
+    try {
+      await api('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action === 'readAll' ? { action } : { action, ids }),
+      });
+      setNotifications((current) =>
+        current.map((n) =>
+          action === 'readAll' || (ids || []).includes(n.id) ? { ...n, read: true } : n,
+        ),
+      );
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not update notifications.');
+    }
+  }
+
+  async function nudgeTeammate(recipientId: string) {
+    if (localOnly) {
+      const note = localNudgeNotification({
+        recipientId,
+        senderName: user?.name || 'Teammate',
+        projectId: project.id,
+        projectName: project.name,
+      });
+      // Sandbox: show the nudge in this session's bell so the UX is testable.
+      setNotifications((current) => [{ ...note, userId: user?.id || note.userId }, ...current].slice(0, 50));
+      toast.success('Nudge sent in TeamUP.');
+      return;
+    }
+    try {
+      const result = await api('/api/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'nudge', projectId: project.id, recipientId }),
       });
-      toast.success('Nudge sent.');
+      const via = [
+        result.pushDelivered ? 'push' : null,
+        result.emailSent ? 'email' : null,
+        result.inApp ? 'TeamUP' : null,
+      ].filter(Boolean);
+      toast.success(
+        via.length
+          ? `Nudge sent via ${via.join(' and ')}.`
+          : 'Nudge sent in TeamUP.',
+      );
+      void loadNotifications();
     } catch (error) {
       toast.error((error as Error).message || 'Could not send the nudge.');
     }
@@ -397,6 +465,7 @@ export default function Workspace({
       setUser(data.user);
       setProjects(data.projects);
       setAiReady(data.aiReady);
+      setEmailReady(!!data.emailReady);
       setCanConfigureAI(data.canConfigureAI);
       offerTutorialIfNeeded(!!data.user.tutorialSeen);
       setProject(
@@ -447,6 +516,7 @@ export default function Workspace({
             });
             setProjects(data.projects || []);
             setAiReady(!!data.aiReady);
+            setEmailReady(!!data.emailReady);
             setCanConfigureAI(!!data.canConfigureAI);
             offerTutorialIfNeeded(!!data.user.tutorialSeen);
             setProject(
@@ -496,6 +566,12 @@ export default function Workspace({
         .then((d) => setFiles(d.files))
         .catch((e) => toast.error(e.message));
   }, [view, project.id, localOnly]);
+  useEffect(() => {
+    if (localOnly || demoMode || !user?.id) return;
+    void loadNotifications();
+    const timer = window.setInterval(() => void loadNotifications(), 45000);
+    return () => window.clearInterval(timer);
+  }, [localOnly, demoMode, user?.id]);
   useEffect(() => {
     if (!user?.id || localOnly || demoMode) return;
     let active = true;
@@ -731,6 +807,17 @@ export default function Workspace({
   async function save(next: Project, create = false) {
     // Local sandbox: keep everything in React state (no API / no DB).
     if (localOnly) {
+      if (user?.id) {
+        const forMe = localTaskActivityNotifications(
+          create ? null : project,
+          next,
+          user.id,
+          user.name || 'Teammate',
+        ).filter((n) => n.userId === user.id);
+        if (forMe.length) {
+          setNotifications((current) => [...forMe, ...current].slice(0, 50));
+        }
+      }
       setProject(next);
       setProjects((prev) => {
         if (create) return [...prev.filter((p) => p.id !== next.id), next];
@@ -880,18 +967,39 @@ export default function Workspace({
         ],
       });
     }
+    let memberInviteHandled = false;
     if (modal === 'member') {
       if (project.members.some((m) => m.email.toLowerCase() === draft.email.toLowerCase())) {
         setError('This email is already on the team.');
         return;
       }
+      const memberEmail = draft.email.toLowerCase();
       ok = await save({
         ...project,
         members: [
           ...project.members,
-          { id: uid(), name: draft.name, email: draft.email.toLowerCase() },
+          { id: uid(), name: draft.name, email: memberEmail },
         ],
       });
+      if (ok && emailReady && !localOnly) {
+        memberInviteHandled = true;
+        try {
+          await api('/api/invites', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'send',
+              project: project.id,
+              email: memberEmail,
+            }),
+          });
+          toast.success('Teammate added and invitation emailed.');
+        } catch (err) {
+          toast.message('Teammate added, but the invitation email could not be sent.', {
+            description: (err as Error).message,
+          });
+        }
+      }
     }
     if (modal === 'brief') {
       ok = await save({ ...project, description: draft.description || '' });
@@ -923,7 +1031,7 @@ export default function Workspace({
     }
     if (ok) {
       setModal('');
-      toast.success('Saved to your workspace.');
+      if (!memberInviteHandled) toast.success('Saved to your workspace.');
     }
   }
   const taskRows = (tasks: Task[]) =>
@@ -1110,15 +1218,91 @@ export default function Workspace({
                 day: 'numeric',
               })}
             </span>
-            <button
-              className='bell'
-              aria-label='Reminder settings'
-              onClick={() => {
-                if (requireProject()) open('reminders', { hours: project.reminderHours });
+            <Popover
+              open={notifOpen}
+              onOpenChange={(open) => {
+                setNotifOpen(open);
+                if (open) void loadNotifications();
               }}
             >
-              <Bell size={19} />
-            </button>
+              <PopoverTrigger asChild>
+                <button
+                  type='button'
+                  className='bell'
+                  aria-label='Notifications'
+                  aria-haspopup='dialog'
+                >
+                  <Bell size={19} />
+                  {notifications.some((n) => !n.read) ? (
+                    <span className='bell-badge' aria-hidden>
+                      {Math.min(
+                        9,
+                        notifications.filter((n) => !n.read).length,
+                      )}
+                      {notifications.filter((n) => !n.read).length > 9 ? '+' : ''}
+                    </span>
+                  ) : null}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align='end' className='notification-popover w-[340px] p-0'>
+                <div className='notification-popover-head'>
+                  <strong>Notifications</strong>
+                  {notifications.some((n) => !n.read) ? (
+                    <button
+                      type='button'
+                      className='btn subtle'
+                      onClick={() => void markNotifications('readAll')}
+                    >
+                      Mark all read
+                    </button>
+                  ) : null}
+                </div>
+                <div className='notification-list'>
+                  {!notifications.length ? (
+                    <p className='notification-empty'>No updates yet.</p>
+                  ) : (
+                    notifications.map((n) => (
+                      <button
+                        type='button'
+                        key={n.id}
+                        className={`notification-item${n.read ? '' : ' unread'}`}
+                        onClick={() => {
+                          if (!n.read) void markNotifications('read', [n.id]);
+                          if (n.projectId && n.projectId !== project.id) {
+                            const target = projects.find((p) => p.id === n.projectId);
+                            if (target) setProject(target);
+                          }
+                          setNotifOpen(false);
+                        }}
+                      >
+                        <span className='notification-item-title'>{n.title}</span>
+                        <span className='notification-item-body'>{n.body}</span>
+                        <span className='notification-item-time'>
+                          {new Date(n.createdAt).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className='notification-popover-foot'>
+                  <button
+                    type='button'
+                    className='btn subtle'
+                    onClick={() => {
+                      setNotifOpen(false);
+                      if (requireProject()) open('reminders', { hours: project.reminderHours });
+                    }}
+                  >
+                    Reminder preferences
+                  </button>
+                </div>
+              </PopoverContent>
+            </Popover>
             <button
               type='button'
               className='avatar profile-avatar-button'
@@ -1796,35 +1980,31 @@ export default function Workspace({
                 <div className='panel-heading'>
                   <h2>Your project team</h2>
                 </div>
-                {project.members.map((m) => (
-                  <div className='member-row' key={m.id}>
-                    <span className='avatar'>{initials(m.name)}</span>
-                    <div className='member-name'>
-                      {m.name}
-                      <small className='block'>{m.email}</small>
-                    </div>
-                    <small>{project.tasks.filter((t) => t.assignee === m.id).length} tasks</small>
-                    {m.id !== user?.id && (
-                      <div className='flex gap-2'>
-                        {!localOnly && pushSettings.enabled && (
-                          <button
-                            type='button'
-                            className='btn subtle'
-                            onClick={() => nudgeTeammate(m.id)}
-                            title={`Send a push nudge to ${m.name}`}
-                          >
-                            <Send size={14} /> Nudge
-                          </button>
-                        )}
-                        {isOwner && (
-                          <button className='btn subtle' onClick={() => open('remove', m)}>
-                            Remove
-                          </button>
-                        )}
+                <p className='form-note team-list-hint'>
+                  Click a teammate to see their tasks and reassign work.
+                </p>
+                {project.members.map((m) => {
+                  const taskCount = project.tasks.filter((t) => t.assignee === m.id).length;
+                  return (
+                    <button
+                      type='button'
+                      className='member-row member-row-button'
+                      key={m.id}
+                      onClick={() => open('teammate', m)}
+                    >
+                      <span className='avatar' aria-hidden>
+                        {initials(m.name)}
+                      </span>
+                      <div className='member-name'>
+                        {m.name}
+                        <small className='block'>{m.email}</small>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      <small>
+                        {taskCount} task{taskCount === 1 ? '' : 's'}
+                      </small>
+                    </button>
+                  );
+                })}
               </section>
             </>
           )}
@@ -1845,7 +2025,7 @@ export default function Workspace({
                     real invitations.
                   </div>
                 ) : isOwner ? (
-                  <InviteLink key={project.id} project={project.id} />
+                  <InviteLink key={project.id} project={project.id} emailReady={emailReady} />
                 ) : (
                   <div className='notice'>
                     Ask the project owner to create an invitation link for new teammates.
@@ -1938,6 +2118,7 @@ export default function Workspace({
                   task: draft.id ? 'Edit task' : 'Add a task',
                   milestone: 'Add a milestone',
                   member: 'Add a team member',
+                  teammate: draft.name || 'Teammate',
                   planner: plan ? 'Review suggested plan' : 'Plan your project',
                   reminders: 'Reminder preferences',
                   profile: 'Your account',
@@ -1950,9 +2131,11 @@ export default function Workspace({
                 ? planFromCreateId
                   ? 'Customize the plan, then Accept to keep the project — or Cancel to remove it.'
                   : 'Review the suggested plan before adding it to your project.'
-                : modal === 'project'
-                  ? 'Give your group a place to make progress.'
-                  : 'Keep your team on the same page.'}
+                : modal === 'teammate'
+                  ? 'Review their assigned work and move tasks to someone else if needed.'
+                  : modal === 'project'
+                    ? 'Give your group a place to make progress.'
+                    : 'Keep your team on the same page.'}
             </DialogDescription>
           </DialogHeader>
           {error && <div className='error'>{error}</div>}
@@ -1971,14 +2154,22 @@ export default function Workspace({
             <form className='form' onSubmit={submit}>
               {['project', 'member', 'profile'].includes(modal) && (
                 <label>
-                  {modal === 'project' ? 'Project name' : 'Name'}
+                  {modal === 'project'
+                    ? 'Project name'
+                    : modal === 'member'
+                      ? 'Teammate name'
+                      : 'Name'}
                   <input
                     required
                     maxLength={100}
                     value={draft.name || ''}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                     placeholder={
-                      modal === 'project' ? 'e.g. Marketing research project' : 'Your name'
+                      modal === 'project'
+                        ? 'e.g. Marketing research project'
+                        : modal === 'member'
+                          ? 'e.g. Alex'
+                          : 'Your name'
                     }
                   />
                 </label>
@@ -2024,6 +2215,10 @@ export default function Workspace({
                     />
                     Allow teammate nudges
                   </label>
+                  <p className='form-note'>
+                    When enabled, teammates can nudge you by email
+                    {emailReady ? '' : ' (once Resend is configured)'} and browser push.
+                  </p>
                   <div className='push-controls'>
                     <p className='form-note'>
                       {pushSettings.enabled
@@ -2207,16 +2402,19 @@ export default function Workspace({
                     />
                   </label>
                   <p className='form-note'>
-                    Use the email they sign in with, then share the site link. Adding a member does
-                    not send an email.
+                    Use the email they sign in with.
+                    {emailReady && !localOnly
+                      ? ' We’ll email them a project invitation link after you add them.'
+                      : ' Share an invite link from Project settings if email isn’t connected yet.'}
                   </p>
                 </>
               )}
               {modal === 'reminders' && (
                 <>
                   <div className='notice'>
-                    Email delivery isn’t connected yet. Save your preference now; deadlines remain
-                    visible in your workspace.
+                    {emailReady
+                      ? 'Deadline reminder emails aren’t automated yet. Save your preference now; you can still nudge teammates by email and push from the Team page.'
+                      : 'Email delivery isn’t connected yet. Save your preference now; deadlines remain visible in your workspace.'}
                   </div>
                   <label>
                     Remind me before a deadline
@@ -2240,7 +2438,15 @@ export default function Workspace({
                 </a>
               )}
               <button disabled={busy || !user} className='btn primary' type='submit'>
-                {busy ? 'Saving…' : modal === 'project' ? 'Create project' : 'Save changes'}
+                {busy
+                  ? modal === 'member'
+                    ? 'Sending…'
+                    : 'Saving…'
+                  : modal === 'project'
+                    ? 'Create project'
+                    : modal === 'member'
+                      ? 'Add and send invite'
+                      : 'Save changes'}
               </button>
               {modal === 'profile' && canConfigureAI && (
                 <button type='button' className='btn' onClick={() => open('ai-settings')}>
@@ -2308,6 +2514,114 @@ export default function Workspace({
               </button>
               <button className='btn' disabled={busy} onClick={() => setModal('')}>
                 Cancel
+              </button>
+            </div>
+          )}
+          {modal === 'teammate' && draft.id && (
+            <div className='form teammate-detail'>
+              <div className='teammate-detail-header'>
+                <span className='avatar' aria-hidden>
+                  {initials(draft.name || '')}
+                </span>
+                <div>
+                  <strong>{draft.name}</strong>
+                  <small className='block'>{draft.email}</small>
+                </div>
+              </div>
+              {draft.id !== user?.id && (
+                <div className='flex flex-wrap gap-2'>
+                  {(localOnly || emailReady || pushSettings.enabled) && (
+                    <button
+                      type='button'
+                      className='btn'
+                      disabled={busy}
+                      onClick={() => nudgeTeammate(draft.id)}
+                    >
+                      <Send size={14} /> Nudge
+                    </button>
+                  )}
+                  {isOwner && (
+                    <button
+                      type='button'
+                      className='btn subtle'
+                      disabled={busy}
+                      onClick={() => open('remove', draft)}
+                    >
+                      Remove from project
+                    </button>
+                  )}
+                </div>
+              )}
+              <h3 className='teammate-tasks-heading'>
+                Assigned tasks (
+                {project.tasks.filter((t) => t.assignee === draft.id).length})
+              </h3>
+              {project.tasks.filter((t) => t.assignee === draft.id).length === 0 ? (
+                <p className='form-note'>No tasks assigned to {draft.name} yet.</p>
+              ) : (
+                <div className='teammate-task-list'>
+                  {project.tasks
+                    .filter((t) => t.assignee === draft.id)
+                    .map((t) => (
+                      <div className='teammate-task-row' key={t.id}>
+                        <div className='teammate-task-main'>
+                          <strong>{t.title}</strong>
+                          <small>
+                            Due{' '}
+                            {new Date(t.due + 'T12:00:00').toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                            })}{' '}
+                            ·{' '}
+                            {t.status === 'done'
+                              ? 'Completed'
+                              : t.status === 'progress'
+                                ? 'In progress'
+                                : 'To do'}
+                          </small>
+                        </div>
+                        <label className='teammate-reassign'>
+                          <span className='sr-only'>Move {t.title}</span>
+                          <Picker
+                            value={t.assignee || 'none'}
+                            onChange={async (v) => {
+                              const nextAssignee = v === 'none' ? '' : v;
+                              if (nextAssignee === t.assignee) return;
+                              const ok = await save({
+                                ...project,
+                                tasks: project.tasks.map((x) =>
+                                  x.id === t.id ? { ...x, assignee: nextAssignee } : x,
+                                ),
+                              });
+                              if (ok) {
+                                const name =
+                                  nextAssignee === ''
+                                    ? 'Unassigned'
+                                    : project.members.find((m) => m.id === nextAssignee)?.name ||
+                                      'teammate';
+                                toast.success(`Moved “${t.title}” to ${name}.`);
+                              }
+                            }}
+                            options={[
+                              { value: 'none', label: 'Unassigned' },
+                              ...project.members.map((m) => ({ value: m.id, label: m.name })),
+                            ]}
+                          />
+                        </label>
+                        <button
+                          type='button'
+                          className='btn subtle'
+                          disabled={busy}
+                          onClick={() => open('task', t)}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+              <button type='button' className='btn' onClick={() => setModal('')}>
+                Close
               </button>
             </div>
           )}

@@ -237,3 +237,20 @@ export const fileCleanup = sqliteTable('file_cleanup', {
     .notNull()
     .references(() => users.id),
 });
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    projectId: text('project_id'),
+    type: text('type').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    read: integer('read', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at').notNull(),
+    meta: text('meta').notNull().default('{}'),
+  },
+  (t) => [index('notification_user_created').on(t.userId, t.createdAt)],
+);

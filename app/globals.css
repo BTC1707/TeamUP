@@ -501,16 +501,86 @@ h3 {
   gap: 10px;
   padding: 0 22px 18px;
 }
-.team-list-panel .panel-heading + .member-row {
+.team-list-hint {
+  margin: 0 22px 4px;
+}
+.team-list-panel .panel-heading + .team-list-hint {
+  margin-top: 8px;
+}
+.team-list-panel .panel-heading + .member-row,
+.team-list-panel .team-list-hint + .member-row {
   padding-top: 18px;
 }
 .member-row .member-name {
   flex: 1;
   font-size: 14px;
+  text-align: left;
 }
 .member-row small {
   color: #969eac;
   font-size: 12px;
+}
+button.member-row-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  border-radius: 10px;
+  margin: 0 8px;
+  width: calc(100% - 16px);
+  padding-left: 14px;
+  padding-right: 14px;
+  transition: background 0.15s ease;
+}
+button.member-row-button:hover,
+button.member-row-button:focus-visible {
+  background: #f4f2fb;
+  outline: none;
+}
+.teammate-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.teammate-detail-header small {
+  color: #969eac;
+}
+.teammate-tasks-heading {
+  margin: 8px 0 0;
+  font-size: 15px;
+}
+.teammate-task-list {
+  display: grid;
+  gap: 10px;
+}
+.teammate-task-row {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid #e5e4f1;
+  border-radius: 10px;
+  background: #faf9ff;
+}
+@media (min-width: 560px) {
+  .teammate-task-row {
+    grid-template-columns: 1fr minmax(140px, 180px) auto;
+    align-items: center;
+  }
+}
+.teammate-task-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.teammate-task-main small {
+  color: #969eac;
+}
+.teammate-reassign {
+  display: block;
+  min-width: 0;
 }
 .empty {
   padding: 35px;
@@ -892,15 +962,77 @@ h3 {
   color: #9199aa;
   position: relative;
 }
-.bell:after {
-  content: "";
+.bell-badge {
   position: absolute;
-  right: 2px;
-  top: 1px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #8a78d3;
+  right: -4px;
+  top: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #6f5bd3;
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  font-weight: 600;
+}
+.notification-popover-head,
+.notification-popover-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+}
+.notification-popover-head {
+  border-bottom: 1px solid #ececf4;
+}
+.notification-popover-foot {
+  border-top: 1px solid #ececf4;
+}
+.notification-list {
+  max-height: 320px;
+  overflow: auto;
+}
+.notification-empty {
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+  color: #969eac;
+  font-size: 13px;
+}
+.notification-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid #f0f0f6;
+  background: transparent;
+  padding: 12px 14px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.notification-item:hover {
+  background: #f7f6fc;
+}
+.notification-item.unread {
+  background: #faf8ff;
+}
+.notification-item-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+.notification-item-body {
+  font-size: 12px;
+  color: #5c6370;
+  line-height: 1.4;
+}
+.notification-item-time {
+  font-size: 11px;
+  color: #969eac;
 }
 .mobile-title {
   display: none;
@@ -1281,6 +1413,16 @@ h3 {
   border: 1px solid #d8dce8;
   border-radius: 8px;
   font-size: 14px;
+}
+.invite-email-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.invite-email-row input {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 .join-page {
   min-height: 100vh;

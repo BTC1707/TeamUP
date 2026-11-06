@@ -12,12 +12,12 @@ const questions = [
   {
     question: 'How do teammates join a project?',
     answer:
-      'The project owner can invite teammates from the Team area. Teammates should sign in using the email address the owner invited.',
+      'The project owner can email an invitation link from Project settings or add a teammate by email. Teammates should sign in with the same email address they were invited with.',
   },
   {
     question: 'Does TeamUP send reminders or push notifications?',
     answer:
-      'Automatic deadline reminders are not connected. On deployments with push configured, teammates can enable browser notifications in account settings and send nudges from the Team page.',
+      'Automatic deadline reminders are not connected yet. On deployments with email and/or push configured, teammates can receive invitation emails and Team-page nudges (browser notification and/or email). Enable browser notifications in account settings to get push nudges.',
   },
 ];
 

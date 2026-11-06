@@ -1,5 +1,7 @@
 import type { Actor } from './store';
 import { getProject } from './store';
+import { emailConfigured, inviteEmailContent, sendEmail } from '@/lib/email';
+
 export async function hashInvite(token: string) {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).join('');
@@ -17,7 +19,33 @@ export async function createInvite(db: D1Database, projectId: string, u: Actor) 
     )
     .bind(projectId, await hashInvite(token), u.userId, new Date().toISOString(), expires)
     .run();
-  return { token, expiresAt: expires };
+  return { token, expiresAt: expires, projectName: p.name };
+}
+
+/** Create (or rotate) an invite and email the join link. */
+export async function sendInviteEmail(
+  db: D1Database,
+  projectId: string,
+  u: Actor,
+  email: string,
+  origin: string,
+) {
+  if (!emailConfigured()) throw new Error('EMAIL_NOT_CONFIGURED');
+  const to = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to) || to.length > 254)
+    throw new Error('EMAIL_INVALID');
+  if (to === u.email.toLowerCase()) throw new Error('EMAIL_SELF');
+
+  const invite = await createInvite(db, projectId, u);
+  const joinUrl = `${origin.replace(/\/$/, '')}/join#${invite.token}`;
+  const content = inviteEmailContent({
+    inviterName: u.displayName,
+    projectName: invite.projectName,
+    joinUrl,
+    expiresAt: invite.expiresAt,
+  });
+  await sendEmail({ to, ...content });
+  return { sent: true as const, expiresAt: invite.expiresAt, token: invite.token };
 }
 export async function previewInvite(db: D1Database, token: string, u: Actor) {
   if (!/^[a-f0-9]{64}$/.test(token)) throw new Error('INVITE_INVALID');

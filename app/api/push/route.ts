@@ -1,5 +1,12 @@
 import { buildPushPayload, type PushSubscription } from '@block65/webcrypto-web-push';
 import { identity, runtime, projectFor, sameOrigin } from '@/lib/server';
+import { insertNotifications } from '@/lib/notifications';
+import {
+  emailConfigured,
+  nudgeEmailContent,
+  sendEmail,
+  EmailError,
+} from '@/lib/email';
 
 function vapidConfig() {
   const env = runtime();
@@ -50,6 +57,7 @@ export async function GET() {
       enabled: !!(vapid.subject && vapid.publicKey && vapid.privateKey),
       publicKey: vapid.publicKey || null,
       subscribed: !!subscription,
+      emailReady: emailConfigured(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : '';
@@ -117,61 +125,115 @@ export async function POST(req: Request) {
         return Response.json({ error: 'Choose a teammate to nudge.' }, { status: 400 });
 
       const project = await projectFor(projectId, user);
-      if (!project.members.some((member) => member.id === recipientId))
+      const recipient = project.members.find((member) => member.id === recipientId);
+      if (!recipient)
         return Response.json({ error: 'That teammate is not in this project.' }, { status: 403 });
 
       const preference = await DB.prepare('SELECT notifications FROM settings WHERE user_id=?')
         .bind(recipientId)
         .first<{ notifications: number }>();
-      if (!preference?.notifications)
+      // No settings row yet (never signed in) → allow email; signed-in users who opted out stay opted out.
+      if (preference && !preference.notifications)
         return Response.json({ error: 'That teammate has notifications turned off.' }, { status: 409 });
 
+      const origin = new URL(req.url).origin;
+      const title = `${user.displayName} sent you a nudge`;
+      const bodyText = `Check in on ${project.name.slice(0, 100)} when you have a moment.`;
+
+      let pushDelivered = 0;
       const vapid = vapidConfig();
-      if (!vapid.subject || !vapid.publicKey || !vapid.privateKey)
-        return Response.json({ error: 'Push delivery is not configured for this deployment yet.' }, { status: 503 });
+      const pushReady = !!(vapid.subject && vapid.publicKey && vapid.privateKey);
+      if (pushReady) {
+        const rows = await DB.prepare(
+          'SELECT id,endpoint,p256dh,auth_secret FROM push_subscriptions WHERE user_id=?',
+        )
+          .bind(recipientId)
+          .all<{ id: string; endpoint: string; p256dh: string; auth_secret: string }>();
 
-      const rows = await DB.prepare(
-        'SELECT id,endpoint,p256dh,auth_secret FROM push_subscriptions WHERE user_id=?',
-      )
-        .bind(recipientId)
-        .all<{ id: string; endpoint: string; p256dh: string; auth_secret: string }>();
-      if (!rows.results.length)
-        return Response.json({ error: 'That teammate has not enabled push notifications on a device.' }, { status: 409 });
-
-      const message = {
-        data: {
-          title: `${user.displayName} sent you a nudge`,
-          body: `Check in on ${project.name.slice(0, 100)} when you have a moment.`,
-          url: '/workspace',
-        },
-        options: { ttl: 60 * 60, urgency: 'normal' as const },
-      };
-      let delivered = 0;
-      const deadIds: string[] = [];
-      for (const row of rows.results) {
-        const subscription: PushSubscription = {
-          endpoint: row.endpoint,
-          expirationTime: null,
-          keys: { p256dh: row.p256dh, auth: row.auth_secret },
+        const message = {
+          data: {
+            title,
+            body: bodyText,
+            url: '/workspace',
+          },
+          options: { ttl: 60 * 60, urgency: 'normal' as const },
         };
-        try {
-          const request = await buildPushPayload(message, subscription, vapid);
-          const response = await fetch(subscription.endpoint, request);
-          if (response.ok || response.status === 201 || response.status === 202) delivered += 1;
-          else if (response.status === 404 || response.status === 410) deadIds.push(row.id);
-        } catch {
-          // Keep transiently failing subscriptions so a later nudge can retry them.
+        const deadIds: string[] = [];
+        for (const row of rows.results) {
+          const subscription: PushSubscription = {
+            endpoint: row.endpoint,
+            expirationTime: null,
+            keys: { p256dh: row.p256dh, auth: row.auth_secret },
+          };
+          try {
+            const request = await buildPushPayload(message, subscription, vapid);
+            const response = await fetch(subscription.endpoint, request);
+            if (response.ok || response.status === 201 || response.status === 202) pushDelivered += 1;
+            else if (response.status === 404 || response.status === 410) deadIds.push(row.id);
+          } catch {
+            // Keep transiently failing subscriptions so a later nudge can retry them.
+          }
+        }
+        if (deadIds.length) {
+          const statements = deadIds.map((id) =>
+            DB.prepare('DELETE FROM push_subscriptions WHERE id=?').bind(id),
+          );
+          await DB.batch(statements);
         }
       }
-      if (deadIds.length) {
-        const statements = deadIds.map((id) =>
-          DB.prepare('DELETE FROM push_subscriptions WHERE id=?').bind(id),
-        );
-        await DB.batch(statements);
+
+      let emailSent = false;
+      let emailError = '';
+      if (emailConfigured() && recipient.email) {
+        try {
+          const content = nudgeEmailContent({
+            senderName: user.displayName,
+            projectName: project.name,
+            workspaceUrl: `${origin}/workspace`,
+          });
+          await sendEmail({ to: recipient.email, ...content });
+          emailSent = true;
+        } catch (error) {
+          emailError =
+            error instanceof EmailError
+              ? error.message
+              : 'Email could not be sent. Please try again.';
+        }
       }
-      if (!delivered)
-        return Response.json({ error: 'The push service could not deliver the nudge. Ask them to re-enable notifications.' }, { status: 502 });
-      return Response.json({ ok: true, delivered });
+
+      let inApp = false;
+      try {
+        await insertNotifications(DB, [
+          {
+            userId: recipientId,
+            projectId: project.id,
+            type: 'nudge',
+            title: 'Nudge',
+            body: `${user.displayName} sent you a nudge on your ${project.name} project. Go in and get your work done!`,
+            meta: { actorId: user.userId, actorName: user.displayName },
+          },
+        ]);
+        inApp = true;
+      } catch (error) {
+        console.error('In-app nudge notification failed', error);
+      }
+
+      if (pushDelivered || emailSent || inApp) {
+        return Response.json({
+          ok: true,
+          delivered: pushDelivered,
+          pushDelivered: pushDelivered > 0,
+          emailSent,
+          inApp,
+        });
+      }
+
+      if (emailError)
+        return Response.json({ error: emailError }, { status: 502 });
+      return Response.json(
+        { error: 'Could not deliver the nudge. Please try again.' },
+        { status: 502 },
+      );
     }
 
     return Response.json({ error: 'Unknown push action.' }, { status: 400 });

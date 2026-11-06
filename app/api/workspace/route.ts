@@ -1,4 +1,5 @@
 import { aiConfigured, isSiteOwner } from '@/lib/ai-config';
+import { emailConfigured } from '@/lib/email';
 import { identity, runtime, projectFor, failure, sameOrigin } from '@/lib/server';
 import {
   listProjects,
@@ -8,6 +9,7 @@ import {
   deleteProject,
   cleanupFiles,
 } from '@/lib/store';
+import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
 import type { Project } from '@/lib/model';
 export async function GET() {
   try {
@@ -36,7 +38,7 @@ export async function GET() {
       projects: await listProjects(DB, u),
       aiReady: await aiConfigured(),
       canConfigureAI: isSiteOwner(u.email),
-      emailReady: false,
+      emailReady: emailConfigured(),
     });
   } catch (e) {
     return failure(e);
@@ -257,7 +259,19 @@ export async function POST(req: Request) {
     stmts.push(...replaceRows(DB, p, group, owner, token, create || owner === u.userId, u.userId));
     const results = await DB.batch(stmts);
     if (!create && !results[0].meta.changes) throw new Error('CONFLICT');
-    return Response.json({ project: await readProject(DB, p.id) });
+    const saved = await readProject(DB, p.id);
+    try {
+      const activity = taskActivityNotifications(
+        previous || null,
+        saved,
+        u.userId,
+        u.displayName,
+      );
+      if (activity.length) await insertNotifications(DB, activity);
+    } catch (error) {
+      console.error('Project activity notifications failed', error);
+    }
+    return Response.json({ project: saved });
   } catch (e) {
     return failure(e);
   }

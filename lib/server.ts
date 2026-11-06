@@ -13,6 +13,8 @@ export const runtime = () =>
     VAPID_SUBJECT?: string;
     VAPID_SERVER_PUBLIC_KEY?: string;
     VAPID_SERVER_PRIVATE_KEY?: string;
+    RESEND_API_KEY?: string;
+    EMAIL_FROM?: string;
   };
 
 export async function identity() {
