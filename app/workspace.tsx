@@ -340,6 +340,8 @@ export default function Workspace({
     availabilityPaintMoveRef.current(event),
   );
   const availabilityPaintEndListenerRef = useRef(() => availabilityPaintEndRef.current());
+  const projectRef = useRef(project);
+  const availabilitySaveTailRef = useRef(Promise.resolve());
   const [draft, setDraft] = useState<any>({});
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
@@ -412,6 +414,10 @@ export default function Workspace({
       active = false;
     };
   }, [view]);
+
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1241,16 +1247,70 @@ export default function Workspace({
     setGoogleBusySlots((current) => current.filter((slot) => slot !== slotKey));
   }
 
+  function sameAvailabilitySlots(a: string[] = [], b: string[] = []) {
+    if (a.length !== b.length) return false;
+    const other = new Set(b);
+    return a.every((slot) => other.has(slot));
+  }
+
+  function applyProjectLocally(next: Project) {
+    projectRef.current = next;
+    setProject(next);
+    persistProjectSelection(next.id || null);
+    setProjects((prev) => prev.map((p) => (p.id === next.id ? next : p)));
+  }
+
+  /** Optimistic availability commit — keeps the grid snappy on slow network saves. */
   function commitAvailabilitySlots(next: string[]) {
     if (!requireProject()) return;
     if (pendingAvailability !== null) {
       setPendingAvailability(next);
+      setAvailabilityPaintPreview(null);
       return;
     }
-    void save({
-      ...project,
-      availability: { ...project.availability, [me]: next },
-    });
+
+    const base = projectRef.current;
+    const nextProject = {
+      ...base,
+      availability: { ...base.availability, [me]: next },
+    };
+    applyProjectLocally(nextProject);
+    setAvailabilityPaintPreview(null);
+
+    if (localOnly) return;
+
+    availabilitySaveTailRef.current = availabilitySaveTailRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        // Keep flushing until the server matches the latest painted slots.
+        for (;;) {
+          const payload = projectRef.current;
+          const slotsBefore = payload.availability[me] || [];
+          try {
+            const result = await api('/api/workspace', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'update', project: payload }),
+            });
+            const slotsNow = projectRef.current.availability[me] || [];
+            if (sameAvailabilitySlots(slotsBefore, slotsNow)) {
+              applyProjectLocally(result.project);
+              return;
+            }
+            applyProjectLocally({
+              ...result.project,
+              availability: {
+                ...result.project.availability,
+                [me]: slotsNow,
+              },
+            });
+          } catch (error) {
+            setError((error as Error).message);
+            toast.error((error as Error).message || 'Could not save availability.');
+            return;
+          }
+        }
+      });
   }
 
   function paintAvailabilityKey(slotKey: string) {
@@ -1280,9 +1340,7 @@ export default function Workspace({
       return;
     }
 
-    const next = Array.from(session.working);
-    setAvailabilityPaintPreview(null);
-    commitAvailabilitySlots(next);
+    commitAvailabilitySlots(Array.from(session.working));
   };
 
   availabilityPaintMoveRef.current = (event: PointerEvent) => {
@@ -1317,7 +1375,6 @@ export default function Workspace({
       Date.parse(opts.slotKey) <= Date.now() ||
       opts.event.button !== 0 ||
       availabilityView !== 'calendar' ||
-      busy ||
       !requireProject()
     ) {
       return;
