@@ -330,11 +330,16 @@ export default function Workspace({
     mode: 'add' | 'remove';
     working: Set<string>;
     startKey: string;
+    visited: Set<string>;
     moved: boolean;
     busyDismissOnly: boolean;
   } | null>(null);
   const availabilityPaintMoveRef = useRef<(event: PointerEvent) => void>(() => {});
   const availabilityPaintEndRef = useRef<() => void>(() => {});
+  const availabilityPaintMoveListenerRef = useRef((event: PointerEvent) =>
+    availabilityPaintMoveRef.current(event),
+  );
+  const availabilityPaintEndListenerRef = useRef(() => availabilityPaintEndRef.current());
   const [draft, setDraft] = useState<any>({});
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
@@ -1251,6 +1256,8 @@ export default function Workspace({
   function paintAvailabilityKey(slotKey: string) {
     const session = availabilityPaintRef.current;
     if (!session) return;
+    if (session.visited.has(slotKey)) return;
+    session.visited.add(slotKey);
     setGoogleBusySlots((current) =>
       current.includes(slotKey) ? current.filter((slot) => slot !== slotKey) : current,
     );
@@ -1263,9 +1270,9 @@ export default function Workspace({
     const session = availabilityPaintRef.current;
     if (!session) return;
     availabilityPaintRef.current = null;
-    window.removeEventListener('pointermove', onAvailabilityPaintMove);
-    window.removeEventListener('pointerup', onAvailabilityPaintEnd);
-    window.removeEventListener('pointercancel', onAvailabilityPaintEnd);
+    window.removeEventListener('pointermove', availabilityPaintMoveListenerRef.current);
+    window.removeEventListener('pointerup', availabilityPaintEndListenerRef.current);
+    window.removeEventListener('pointercancel', availabilityPaintEndListenerRef.current);
 
     if (session.busyDismissOnly && !session.moved) {
       dismissBusySlot(session.startKey);
@@ -1285,7 +1292,9 @@ export default function Workspace({
     const slot = target instanceof Element ? target.closest('[data-availability-slot]') : null;
     if (!(slot instanceof HTMLElement)) return;
     const slotKey = slot.dataset.availabilitySlot;
-    if (!slotKey || slot.dataset.availabilityPast === '1') return;
+    // The rendered past flag can be stale if a slot boundary passes while the
+    // calendar is open. Compare the slot timestamp at interaction time too.
+    if (!slotKey || Date.parse(slotKey) <= Date.now()) return;
     if (slotKey !== session.startKey) session.moved = true;
     if (session.busyDismissOnly && session.moved) {
       session.busyDismissOnly = false;
@@ -1296,14 +1305,6 @@ export default function Workspace({
     paintAvailabilityKey(slotKey);
   };
 
-  function onAvailabilityPaintMove(event: PointerEvent) {
-    availabilityPaintMoveRef.current(event);
-  }
-
-  function onAvailabilityPaintEnd() {
-    availabilityPaintEndRef.current();
-  }
-
   function startAvailabilityPaint(opts: {
     slotKey: string;
     selected: boolean;
@@ -1313,6 +1314,7 @@ export default function Workspace({
   }) {
     if (
       opts.past ||
+      Date.parse(opts.slotKey) <= Date.now() ||
       opts.event.button !== 0 ||
       availabilityView !== 'calendar' ||
       busy ||
@@ -1333,21 +1335,22 @@ export default function Workspace({
       mode,
       working,
       startKey: opts.slotKey,
+      visited: new Set([opts.slotKey]),
       moved: false,
       busyDismissOnly,
     };
     setAvailabilityPaintPreview(Array.from(working));
-    window.addEventListener('pointermove', onAvailabilityPaintMove);
-    window.addEventListener('pointerup', onAvailabilityPaintEnd);
-    window.addEventListener('pointercancel', onAvailabilityPaintEnd);
+    window.addEventListener('pointermove', availabilityPaintMoveListenerRef.current);
+    window.addEventListener('pointerup', availabilityPaintEndListenerRef.current);
+    window.addEventListener('pointercancel', availabilityPaintEndListenerRef.current);
   }
 
   useEffect(() => {
     return () => {
       availabilityPaintRef.current = null;
-      window.removeEventListener('pointermove', onAvailabilityPaintMove);
-      window.removeEventListener('pointerup', onAvailabilityPaintEnd);
-      window.removeEventListener('pointercancel', onAvailabilityPaintEnd);
+      window.removeEventListener('pointermove', availabilityPaintMoveListenerRef.current);
+      window.removeEventListener('pointerup', availabilityPaintEndListenerRef.current);
+      window.removeEventListener('pointercancel', availabilityPaintEndListenerRef.current);
     };
   }, []);
   async function setStatus(t: Task) {
