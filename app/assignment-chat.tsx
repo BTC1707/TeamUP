@@ -163,14 +163,30 @@ export default function AssignmentChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState('');
   const [busy, setBusy] = useState(false);
+  const [queuedCount, setQueuedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
   const latest = useRef<HTMLDivElement>(null);
   const requestId = useRef<string | null>(null);
+  const outboundQueue = useRef<string[]>([]);
+  const drainingQueue = useRef(false);
+  const messagesRef = useRef<Message[]>([]);
+  const pendingProposalRef = useRef<PendingProposal | null>(null);
+  const projectRef = useRef(project);
   const isDemo = !project.id;
   const chatEndpoint = localDemo ? '/api/chat/demo' : '/api/chat';
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    pendingProposalRef.current = pendingProposal;
+  }, [pendingProposal]);
+  useEffect(() => {
+    projectRef.current = project;
+  }, [project]);
 
   function openBrief() {
     setContextOpen(false);
@@ -226,6 +242,9 @@ export default function AssignmentChat({
     setError('');
     setQuestion('');
     setPendingProposal(null);
+    setQueuedCount(0);
+    outboundQueue.current = [];
+    drainingQueue.current = false;
     requestId.current = null;
     if (isDemo || localDemo) {
       setLoading(false);
@@ -250,113 +269,197 @@ export default function AssignmentChat({
   }, [project.id, isDemo, localDemo]);
 
   useEffect(() => {
-    if (messages.length) latest.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [messages.length, busy, pendingProposal]);
+    if (messages.length || busy || queuedCount)
+      latest.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [messages.length, busy, pendingProposal, queuedCount]);
 
-  async function send(e: React.FormEvent) {
+  function syncQueueCount() {
+    setQueuedCount(outboundQueue.current.length);
+  }
+
+  function enqueueQuestion(text: string) {
+    outboundQueue.current.push(text);
+    syncQueueCount();
+  }
+
+  function isLockConflict(status: number, message: string) {
+    return (
+      status === 409 &&
+      /already being prepared|please wait/i.test(message || '')
+    );
+  }
+
+  async function postChat(
+    body: Record<string, unknown>,
+    failureMessage: string,
+  ): Promise<{ ok: true; data: any } | { ok: false; error: string; lockConflict: boolean }> {
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const response = await fetch(chatEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data: any = await response.json().catch(() => ({}));
+      const message = data.error || failureMessage;
+      if (response.ok) return { ok: true, data };
+      if (isLockConflict(response.status, message) && attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+        continue;
+      }
+      return {
+        ok: false,
+        error: message,
+        lockConflict: isLockConflict(response.status, message),
+      };
+    }
+    return {
+      ok: false,
+      error: failureMessage,
+      lockConflict: true,
+    };
+  }
+
+  async function askQuestion(text: string): Promise<boolean> {
+    const activeProposal = pendingProposalRef.current;
+    setError('');
+    // Keep the pending proposal while refining (assign/due tweaks). Only clear for a fresh ask.
+    if (!activeProposal) setPendingProposal(null);
+    requestId.current ??= crypto.randomUUID();
+    const currentProject = projectRef.current;
+    const body = localDemo
+      ? {
+          project: currentProject,
+          messages: messagesRef.current,
+          userId: userId || currentProject.members[0]?.id,
+          question: text,
+          timeZone,
+          pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
+        }
+      : {
+          project: currentProject.id,
+          question: text,
+          requestId: requestId.current,
+          timeZone,
+          pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
+        };
+
+    try {
+      const result = await postChat(body, 'Unable to get an answer. Please try again.');
+      if (!result.ok) {
+        setError(
+          result.lockConflict
+            ? 'Still finishing the previous answer. Your message stayed in the box — send again in a moment.'
+            : result.error,
+        );
+        setQuestion((current) => current || text);
+        return false;
+      }
+      setMessages(result.data.messages);
+      setPendingProposal(normalizePending(result.data.pendingProposal));
+      requestId.current = null;
+      return true;
+    } catch (e) {
+      setError((e as Error).message || 'Unable to get an answer. Please try again.');
+      setQuestion((current) => current || text);
+      return false;
+    }
+  }
+
+  async function applyProposal(confirm: boolean): Promise<boolean> {
+    const proposal = pendingProposalRef.current;
+    if (!proposal) return false;
+    const action = confirm ? CONFIRM_ACTION[proposal.type] : CANCEL_ACTION[proposal.type];
+    setError('');
+    const currentProject = projectRef.current;
+    const body = localDemo
+      ? {
+          project: currentProject,
+          messages: messagesRef.current,
+          userId: userId || currentProject.members[0]?.id,
+          action,
+          timeZone,
+          proposal: proposalPayload(proposal),
+        }
+      : {
+          project: currentProject.id,
+          action,
+          timeZone,
+          proposal: proposalPayload(proposal),
+        };
+
+    try {
+      const result = await postChat(body, 'Unable to apply that change.');
+      if (!result.ok) {
+        setError(
+          result.lockConflict
+            ? 'Still finishing the previous answer. Try confirming again in a moment.'
+            : result.error,
+        );
+        return false;
+      }
+      setMessages(result.data.messages);
+      setPendingProposal(null);
+      if (result.data.project && onProjectUpdate) onProjectUpdate(result.data.project);
+      return true;
+    } catch (e) {
+      setError((e as Error).message || 'Unable to apply that change.');
+      return false;
+    }
+  }
+
+  async function processOutboundText(text: string): Promise<boolean> {
+    const activeProposal = pendingProposalRef.current;
+    if (activeProposal) {
+      const decision = proposalDecision(text);
+      if (decision === 'confirm') return applyProposal(true);
+      if (decision === 'cancel') return applyProposal(false);
+    }
+    return askQuestion(text);
+  }
+
+  async function drainOutboundQueue() {
+    if (drainingQueue.current) return;
+    drainingQueue.current = true;
+    setBusy(true);
+    try {
+      while (outboundQueue.current.length) {
+        const next = outboundQueue.current.shift()!;
+        syncQueueCount();
+        const ok = await processOutboundText(next);
+        if (!ok) {
+          // Keep remaining queued items; failed text is restored to the composer when needed.
+          break;
+        }
+      }
+    } finally {
+      drainingQueue.current = false;
+      setBusy(false);
+      syncQueueCount();
+    }
+  }
+
+  function resolveProposal(confirm: boolean) {
+    const proposal = pendingProposalRef.current;
+    if (!proposal) return;
+    enqueueQuestion(confirm ? 'yes' : 'cancel');
+    void drainOutboundQueue();
+  }
+
+  function send(e: React.FormEvent) {
     e.preventDefault();
     if (isDemo && !localDemo) {
       onCreate();
       return;
     }
-    if (busy || !question.trim() || loading) return;
+    const text = question.trim();
+    if (!text || loading || (!aiReady && !isDemo)) return;
 
-    // Pending proposals live on the client — verbal yes/no must hit confirm/cancel.
-    const activeProposal = pendingProposal;
-    if (activeProposal) {
-      const decision = proposalDecision(question);
-      if (decision === 'confirm') {
-        setQuestion('');
-        await resolveProposal(true);
-        return;
-      }
-      if (decision === 'cancel') {
-        setQuestion('');
-        await resolveProposal(false);
-        return;
-      }
-    }
-
-    setBusy(true);
+    setQuestion('');
+    requestId.current = null;
     setError('');
-    // Keep the pending proposal while refining (assign/due tweaks). Only clear for a fresh ask.
-    if (!activeProposal) setPendingProposal(null);
-    requestId.current ??= crypto.randomUUID();
-    try {
-      const response = await fetch(chatEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          localDemo
-            ? {
-                project,
-                messages,
-                userId: userId || project.members[0]?.id,
-                question,
-                timeZone,
-                pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
-              }
-            : {
-                project: project.id,
-                question,
-                requestId: requestId.current,
-                timeZone,
-                pendingProposal: activeProposal ? proposalPayload(activeProposal) : undefined,
-              },
-        ),
-      });
-      const data: any = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to get an answer. Please try again.');
-      setMessages(data.messages);
-      setPendingProposal(normalizePending(data.pendingProposal));
-      setQuestion('');
-      requestId.current = null;
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function resolveProposal(confirm: boolean) {
-    if (busy || !pendingProposal) return;
-    const action = confirm
-      ? CONFIRM_ACTION[pendingProposal.type]
-      : CANCEL_ACTION[pendingProposal.type];
-    setBusy(true);
-    setError('');
-    try {
-      const response = await fetch(chatEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(
-          localDemo
-            ? {
-                project,
-                messages,
-                userId: userId || project.members[0]?.id,
-                action,
-                timeZone,
-                proposal: proposalPayload(pendingProposal),
-              }
-            : {
-                project: project.id,
-                action,
-                timeZone,
-                proposal: proposalPayload(pendingProposal),
-              },
-        ),
-      });
-      const data: any = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Unable to apply that change.');
-      setMessages(data.messages);
-      setPendingProposal(null);
-      if (data.project && onProjectUpdate) onProjectUpdate(data.project);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    enqueueQuestion(text);
+    void drainOutboundQueue();
   }
 
   const lastAssistantId =
@@ -427,18 +530,12 @@ export default function AssignmentChat({
                     <button
                       type='button'
                       className='btn primary'
-                      disabled={busy}
                       onClick={() => resolveProposal(true)}
                     >
-                      {CONFIRM_LABEL[pendingProposal.type]}
+                      {busy ? `Queue: ${CONFIRM_LABEL[pendingProposal.type]}` : CONFIRM_LABEL[pendingProposal.type]}
                     </button>
-                    <button
-                      type='button'
-                      className='btn'
-                      disabled={busy}
-                      onClick={() => resolveProposal(false)}
-                    >
-                      Cancel
+                    <button type='button' className='btn' onClick={() => resolveProposal(false)}>
+                      {busy ? 'Queue cancel' : 'Cancel'}
                     </button>
                     <p className='chat-proposal-hint'>
                       Or reply “yes” / “apply” to confirm, or “cancel” to discard.
@@ -451,7 +548,11 @@ export default function AssignmentChat({
           {busy && (
             <article className='chat-message assistant'>
               <span className='chat-who'>Teamup AI</span>
-              <div>Working through your question…</div>
+              <div>
+                {queuedCount > 0
+                  ? `Working through your question… ${queuedCount} more waiting.`
+                  : 'Working through your question…'}
+              </div>
             </article>
           )}
           <div ref={latest} />
@@ -461,6 +562,12 @@ export default function AssignmentChat({
             {error}
           </div>
         )}
+        {queuedCount > 0 && !error ? (
+          <div className='notice mx-5' role='status'>
+            {queuedCount} message{queuedCount === 1 ? '' : 's'} queued — they’ll send when this
+            answer finishes.
+          </div>
+        ) : null}
         {isDemo && (
           <div className='notice mx-5'>
             Create your own project to ask AI about your assignment.{' '}
@@ -475,10 +582,13 @@ export default function AssignmentChat({
           </label>
           <textarea
             id='assignment-question'
-            placeholder='Ask a question or tell me what to change on the project…'
+            placeholder={
+              busy
+                ? 'Type the next message — it will queue until this answer finishes…'
+                : 'Ask a question or tell me what to change on the project…'
+            }
             maxLength={6000}
             value={question}
-            disabled={busy}
             onChange={(e) => {
               setQuestion(e.target.value);
               requestId.current = null;
@@ -493,11 +603,11 @@ export default function AssignmentChat({
           <button
             type='submit'
             className='btn primary'
-            disabled={busy || loading || !question.trim() || (!aiReady && !isDemo)}
-            aria-label='Send question'
+            disabled={loading || !question.trim() || (!aiReady && !isDemo)}
+            aria-label={busy ? 'Queue question' : 'Send question'}
           >
             <Send size={17} />
-            <span>Send</span>
+            <span>{busy ? 'Queue' : 'Send'}</span>
           </button>
         </form>
         <p className='chat-footnote'>
