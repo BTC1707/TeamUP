@@ -82,7 +82,8 @@ type ChatAction =
   | 'confirmBrief'
   | 'cancelBrief'
   | 'confirmReminders'
-  | 'cancelReminders';
+  | 'cancelReminders'
+  | 'clearHistory';
 
 type DemoMessage = { id: string; role: 'user' | 'assistant'; content: string };
 
@@ -286,6 +287,10 @@ export async function POST(req: Request) {
       cancelBrief: 'Okay — I didn’t change the assignment brief.',
       cancelReminders: 'Okay — I didn’t change reminder timing.',
     };
+
+    if (body.action === 'clearHistory') {
+      return Response.json({ messages: [], pendingProposal: null, project });
+    }
 
     if (body.action && cancelMessages[body.action]) {
       return Response.json({

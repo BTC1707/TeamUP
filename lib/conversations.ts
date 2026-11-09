@@ -45,3 +45,13 @@ export async function readMessages(db: D1Database, id: string): Promise<Message[
     created: m.created_at,
   }));
 }
+
+/** Delete all messages in a conversation and release any answer lock. */
+export async function clearMessages(db: D1Database, id: string) {
+  await db.batch([
+    db.prepare('DELETE FROM ai_messaging WHERE conversation_id=?').bind(id),
+    db
+      .prepare('UPDATE conversations SET lock_id=NULL,locked_until=0 WHERE id=?')
+      .bind(id),
+  ]);
+}

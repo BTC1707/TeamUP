@@ -168,6 +168,8 @@ export default function AssignmentChat({
   const [error, setError] = useState('');
   const [pendingProposal, setPendingProposal] = useState<PendingProposal | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const [clearingHistory, setClearingHistory] = useState(false);
   const latest = useRef<HTMLDivElement>(null);
   const requestId = useRef<string | null>(null);
   const outboundQueue = useRef<string[]>([]);
@@ -446,6 +448,40 @@ export default function AssignmentChat({
     void drainOutboundQueue();
   }
 
+  async function clearChatHistory() {
+    if (clearingHistory || loading || (isDemo && !localDemo)) return;
+    setClearingHistory(true);
+    setError('');
+    outboundQueue.current = [];
+    syncQueueCount();
+    try {
+      if (localDemo || isDemo) {
+        setMessages([]);
+        setPendingProposal(null);
+        setQuestion('');
+        requestId.current = null;
+        setClearConfirmOpen(false);
+        return;
+      }
+      const response = await fetch(chatEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: project.id, action: 'clearHistory' }),
+      });
+      const data: any = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || 'Unable to clear chat history.');
+      setMessages(Array.isArray(data.messages) ? data.messages : []);
+      setPendingProposal(null);
+      setQuestion('');
+      requestId.current = null;
+      setClearConfirmOpen(false);
+    } catch (e) {
+      setError((e as Error).message || 'Unable to clear chat history.');
+    } finally {
+      setClearingHistory(false);
+    }
+  }
+
   function send(e: React.FormEvent) {
     e.preventDefault();
     if (isDemo && !localDemo) {
@@ -487,6 +523,17 @@ export default function AssignmentChat({
               <FileText size={15} />
               Context
             </button>
+            {messages.length > 0 || queuedCount > 0 ? (
+              <button
+                type='button'
+                className='btn subtle'
+                disabled={clearingHistory || loading || busy || (isDemo && !localDemo)}
+                title={busy ? 'Wait for the current answer to finish.' : undefined}
+                onClick={() => setClearConfirmOpen(true)}
+              >
+                Clear chat
+              </button>
+            ) : null}
             <span className='status'>{aiReady ? 'AI connected' : 'Setup pending'}</span>
           </div>
         </div>
@@ -626,6 +673,35 @@ export default function AssignmentChat({
             </DialogDescription>
           </DialogHeader>
           <div className='chat-context-dialog-body stack'>{contextPanel}</div>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <DialogContent className='sm:max-w-[420px]'>
+          <DialogHeader>
+            <DialogTitle>Clear chat history?</DialogTitle>
+            <DialogDescription>
+              This removes your Assignment chat messages for this project only. Tasks, milestones,
+              and other project data stay as they are.
+            </DialogDescription>
+          </DialogHeader>
+          <div className='flex flex-wrap justify-end gap-2 pt-2'>
+            <button
+              type='button'
+              className='btn'
+              disabled={clearingHistory}
+              onClick={() => setClearConfirmOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type='button'
+              className='btn primary'
+              disabled={clearingHistory}
+              onClick={() => void clearChatHistory()}
+            >
+              {clearingHistory ? 'Clearing…' : 'Clear chat'}
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
