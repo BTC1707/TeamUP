@@ -567,6 +567,14 @@ button.member-row-button:focus-visible {
 .teammate-detail-header small {
   color: #969eac;
 }
+.nudge-compose {
+  display: grid;
+  gap: 10px;
+}
+.nudge-compose textarea {
+  resize: vertical;
+  min-height: 72px;
+}
 .teammate-tasks-heading {
   margin: 8px 0 0;
   font-size: 15px;

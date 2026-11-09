@@ -177,11 +177,25 @@ export function localTaskActivityNotifications(
   }));
 }
 
+export function nudgeNotificationBody(opts: {
+  senderName: string;
+  projectName: string;
+  message?: string;
+}) {
+  const lead = `${opts.senderName} sent you a nudge on your ${opts.projectName} project. Go in and get your work done!`;
+  const custom =
+    typeof opts.message === 'string' && opts.message.trim()
+      ? opts.message.trim().slice(0, 500)
+      : '';
+  return custom ? `${lead} “${custom}”` : lead;
+}
+
 export function localNudgeNotification(opts: {
   recipientId: string;
   senderName: string;
   projectId: string;
   projectName: string;
+  message?: string;
 }): AppNotification {
   return {
     id: crypto.randomUUID(),
@@ -189,7 +203,7 @@ export function localNudgeNotification(opts: {
     projectId: opts.projectId,
     type: 'nudge',
     title: 'Nudge',
-    body: `${opts.senderName} sent you a nudge on your ${opts.projectName} project. Go in and get your work done!`,
+    body: nudgeNotificationBody(opts),
     read: false,
     createdAt: new Date().toISOString(),
     meta: { actorName: opts.senderName },

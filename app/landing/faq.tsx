@@ -18,7 +18,7 @@ const questions = [
   {
     question: 'Does TeamUP send reminders or push notifications?',
     answer:
-      'Yes. Teammates can get invitation emails, in-app updates, and optional browser or email nudges from the Team page so everyone stays in the loop.',
+      'Yes. Teammates can get invitation emails, in-app updates, and in-app nudges from the Team page so everyone stays in the loop.',
   },
 ];
 

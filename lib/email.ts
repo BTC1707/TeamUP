@@ -105,11 +105,24 @@ export function nudgeEmailContent(opts: {
   senderName: string;
   projectName: string;
   workspaceUrl: string;
+  message?: string;
 }) {
   const subject = `${opts.senderName} nudged you on TeamUP`;
   const lead = `${opts.senderName} sent you a nudge on your ${opts.projectName} project. Go in and get your work done!`;
-  const text = [lead, '', 'Open the project:', opts.workspaceUrl].join('\n');
-  const html = `
+  const custom =
+    typeof opts.message === 'string' && opts.message.trim()
+      ? opts.message.trim().slice(0, 500)
+      : '';
+  const text = custom
+    ? [lead, '', custom, '', 'Open the project:', opts.workspaceUrl].join('\n')
+    : [lead, '', 'Open the project:', opts.workspaceUrl].join('\n');
+  const html = custom
+    ? `
+    <p>${escapeHtml(lead)}</p>
+    <p>${escapeHtml(custom)}</p>
+    <p><a href="${escapeAttr(opts.workspaceUrl)}">Open the project</a></p>
+  `.trim()
+    : `
     <p>${escapeHtml(lead)}</p>
     <p><a href="${escapeAttr(opts.workspaceUrl)}">Open the project</a></p>
   `.trim();

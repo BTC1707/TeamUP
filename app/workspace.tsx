@@ -671,35 +671,35 @@ export default function Workspace({
     }
   }
 
-  async function nudgeTeammate(recipientId: string) {
+  async function nudgeTeammate(recipientId: string, message = '') {
+    const customMessage = message.replace(/\s+/g, ' ').trim().slice(0, 500);
     if (localOnly) {
       const note = localNudgeNotification({
         recipientId,
         senderName: user?.name || 'Teammate',
         projectId: project.id,
         projectName: project.name,
+        message: customMessage,
       });
       // Sandbox: show the nudge in this session's bell so the UX is testable.
       setNotifications((current) => [{ ...note, userId: user?.id || note.userId }, ...current].slice(0, 50));
       toast.success('Nudge sent in TeamUP.');
+      setDraft((current: any) => ({ ...current, nudgeMessage: '' }));
       return;
     }
     try {
-      const result = await api('/api/push', {
+      await api('/api/push', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'nudge', projectId: project.id, recipientId }),
+        body: JSON.stringify({
+          action: 'nudge',
+          projectId: project.id,
+          recipientId,
+          ...(customMessage ? { message: customMessage } : {}),
+        }),
       });
-      const via = [
-        result.pushDelivered ? 'push' : null,
-        result.emailSent ? 'email' : null,
-        result.inApp ? 'TeamUP' : null,
-      ].filter(Boolean);
-      toast.success(
-        via.length
-          ? `Nudge sent via ${via.join(' and ')}.`
-          : 'Nudge sent in TeamUP.',
-      );
+      toast.success('Nudge sent in TeamUP.');
+      setDraft((current: any) => ({ ...current, nudgeMessage: '' }));
       void loadNotifications();
     } catch (error) {
       toast.error((error as Error).message || 'Could not send the nudge.');
@@ -3024,13 +3024,12 @@ export default function Workspace({
                     Allow teammate nudges
                   </label>
                   <p className='form-note'>
-                    When enabled, teammates can nudge you by email
-                    {emailReady ? '' : ' (once Resend is configured)'} and browser push.
+                    When enabled, teammates can send you in-app nudges in TeamUP.
                   </p>
                   <div className='push-controls'>
                     <p className='form-note'>
                       {pushSettings.enabled
-                        ? 'Browser push lets project teammates send you a nudge on this device.'
+                        ? 'Browser push is configured for this deployment, but teammate nudges are in-app only for now.'
                         : 'Browser push is waiting for this deployment’s VAPID keys to be configured.'}
                     </p>
                     <button
@@ -3221,7 +3220,7 @@ export default function Workspace({
                 <>
                   <div className='notice'>
                     {emailReady
-                      ? 'Deadline reminder emails aren’t automated yet. Save your preference now; you can still nudge teammates by email and push from the Team page.'
+                      ? 'Deadline reminder emails aren’t automated yet. Save your preference now; you can still nudge teammates in-app from the Team page.'
                       : 'Email delivery isn’t connected yet. Save your preference now; deadlines remain visible in your workspace.'}
                   </div>
                   <label>
@@ -3337,27 +3336,38 @@ export default function Workspace({
                 </div>
               </div>
               {draft.id !== user?.id && (
-                <div className='flex flex-wrap gap-2'>
-                  {(localOnly || emailReady || pushSettings.enabled) && (
+                <div className='nudge-compose'>
+                  <label>
+                    Optional message
+                    <textarea
+                      value={draft.nudgeMessage || ''}
+                      maxLength={500}
+                      rows={3}
+                      placeholder={`Quick reminder for ${draft.name || 'your teammate'}…`}
+                      onChange={(e) => setDraft({ ...draft, nudgeMessage: e.target.value })}
+                    />
+                  </label>
+                  <div className='flex flex-wrap gap-2'>
                     <button
                       type='button'
                       className='btn'
                       disabled={busy}
-                      onClick={() => nudgeTeammate(draft.id)}
+                      onClick={() => nudgeTeammate(draft.id, draft.nudgeMessage || '')}
                     >
                       <Send size={14} /> Nudge
                     </button>
-                  )}
-                  {isOwner && (
-                    <button
-                      type='button'
-                      className='btn subtle'
-                      disabled={busy}
-                      onClick={() => open('remove', draft)}
-                    >
-                      Remove from project
-                    </button>
-                  )}
+                    {isOwner && (
+                      <button
+                        type='button'
+                        className='btn subtle'
+                        disabled={busy}
+                        onClick={() => open('remove', draft)}
+                      >
+                        Remove from project
+                      </button>
+                    )}
+                  </div>
+                  <p className='form-note'>Sends an in-app notification. Email and push are paused for now.</p>
                 </div>
               )}
               <h3 className='teammate-tasks-heading'>
