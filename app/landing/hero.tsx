@@ -3,7 +3,7 @@ import { LANDING_ROUTES } from './routes';
 import DemoLink from '../demo-link';
 
 /** First screen: brand, headline, and main buttons. */
-export function LandingHero({ signedIn = false }: { signedIn?: boolean }) {
+export function LandingHero() {
   return (
     <section className='landing-hero'>
       <div className='landing-hero-copy'>
@@ -19,21 +19,13 @@ export function LandingHero({ signedIn = false }: { signedIn?: boolean }) {
         </p>
 
         <div className='landing-cta-row'>
-          {signedIn ? (
-            <a className='btn primary' href={LANDING_ROUTES.workspace}>
-              Open workspace
-            </a>
-          ) : (
-            <>
-              <a className='btn primary' href={LANDING_ROUTES.signUp}>
-                Sign up
-              </a>
+          <a className='btn primary' href={LANDING_ROUTES.signUp}>
+            Sign up
+          </a>
 
-              <a className='btn' href={LANDING_ROUTES.signIn}>
-                Sign in
-              </a>
-            </>
-          )}
+          <a className='btn' href={LANDING_ROUTES.signIn}>
+            Sign in
+          </a>
 
           <DemoLink className='btn subtle'>Try demo</DemoLink>
         </div>

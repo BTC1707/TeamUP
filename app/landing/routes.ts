@@ -12,6 +12,6 @@ export const LANDING_ROUTES = {
   signIn: '/signin?return_to=%2Fworkspace%2Foverview',
   /** Local/demo workspace with no account required. */
   demo: '/demo/overview',
-  /** App home after a successful sign-up / sign-in (also used when already signed in). */
+  /** App home after a successful sign-up / sign-in. */
   workspace: '/workspace/overview',
 } as const;

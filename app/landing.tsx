@@ -20,10 +20,10 @@ import { LandingFaq } from './landing/faq';
 import { LandingGettingStarted } from './landing/getting-started';
 import { LandingHero } from './landing/hero';
 
-export default function Landing({ signedIn = false }: { signedIn?: boolean }) {
+export default function Landing() {
   return (
     <main className='landing-page'>
-      <LandingHero signedIn={signedIn} />
+      <LandingHero />
       <LandingAbout />
       <LandingGettingStarted />
       <LandingFaq />
