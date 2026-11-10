@@ -112,7 +112,7 @@ export default function SignInPage() {
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
               />
-              Remember me
+              Remember me for 90 days
             </label>
             {SHOW_FORGOT_PASSWORD ? (
               <a className='auth-forgot' href='/forgot-password'>

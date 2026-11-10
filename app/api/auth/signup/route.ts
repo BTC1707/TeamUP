@@ -8,9 +8,10 @@
 
 import {
   createSessionToken,
+  requestIsSecure,
   safeReturnPath,
-  sessionCookieHeader,
   validateSignUp,
+  writeSessionCookie,
 } from '@/lib/auth';
 import { hashPassword } from '@/lib/password';
 import { sameOrigin, runtime } from '@/lib/server';
@@ -66,16 +67,15 @@ export async function POST(req: Request) {
       throw err;
     }
 
-    const token = await createSessionToken(validated.email, validated.name);
-    const secure = new URL(req.url).protocol === 'https:';
+    const token = await createSessionToken(validated.email, validated.name, { remember: true });
+    const cookie = await writeSessionCookie(token, {
+      remember: true,
+      secure: requestIsSecure(req),
+    });
 
     return Response.json(
       { ok: true, returnTo: safeReturnPath(body.returnTo) },
-      {
-        headers: {
-          'Set-Cookie': sessionCookieHeader(token, secure),
-        },
-      },
+      { headers: { 'Set-Cookie': cookie } },
     );
   } catch {
     return Response.json(

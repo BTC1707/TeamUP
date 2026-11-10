@@ -37,6 +37,7 @@ export async function signUpAccount(input: {
 }): Promise<AuthResult> {
   const response = await fetch('/api/auth/signup', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       firstName: input.firstName,
@@ -60,6 +61,7 @@ export async function signInAccount(input: {
 }): Promise<AuthResult> {
   const response = await fetch('/api/auth/signin', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       login: input.login,

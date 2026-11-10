@@ -8,9 +8,10 @@
 
 import {
   createSessionToken,
+  requestIsSecure,
   safeReturnPath,
-  sessionCookieHeader,
   validateSignIn,
+  writeSessionCookie,
 } from '@/lib/auth';
 import {
   isLocalDevHost,
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
       '';
     const rawPassword = typeof body.password === 'string' ? body.password : '';
     const remember = body.remember !== false;
+    const secure = requestIsSecure(req);
 
     // Localhost-only test account → blank workspace on the local DB, not production.
     if (isLocalDevHost(req) && matchesLocalDevAccount(rawLogin, rawPassword)) {
@@ -60,10 +62,10 @@ export async function POST(req: Request) {
       const token = await createSessionToken(LOCAL_DEV_ACCOUNT.email, LOCAL_DEV_ACCOUNT.name, {
         remember,
       });
-      const secure = new URL(req.url).protocol === 'https:';
+      const cookie = await writeSessionCookie(token, { remember, secure });
       return Response.json(
         { ok: true, returnTo: safeReturnPath(body.returnTo) },
-        { headers: { 'Set-Cookie': sessionCookieHeader(token, secure, { remember }) } },
+        { headers: { 'Set-Cookie': cookie } },
       );
     }
 
@@ -97,15 +99,11 @@ export async function POST(req: Request) {
     }
 
     const token = await createSessionToken(user.email, user.name, { remember });
-    const secure = new URL(req.url).protocol === 'https:';
+    const cookie = await writeSessionCookie(token, { remember, secure });
 
     return Response.json(
       { ok: true, returnTo: safeReturnPath(body.returnTo) },
-      {
-        headers: {
-          'Set-Cookie': sessionCookieHeader(token, secure, { remember }),
-        },
-      },
+      { headers: { 'Set-Cookie': cookie } },
     );
   } catch {
     return Response.json({ error: 'Unable to sign in. Please try again.' }, { status: 500 });

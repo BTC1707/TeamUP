@@ -12,7 +12,7 @@
  */
 
 import { env } from 'cloudflare:workers';
-import { headers } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
 export type SessionUser = {
   /** Stable id stored in users.auth_id (format: "email:you@school.edu") */
@@ -20,14 +20,18 @@ export type SessionUser = {
   displayName: string;
   email: string;
   fullName: string | null;
+  /** True when the session was created with “Remember me”. */
+  remember: boolean;
 };
 
 /** Cookie name sent to the browser after a successful sign-in / sign-up. */
 export const SESSION_COOKIE = 'teamup_session';
 /** Long-lived session when “Remember me” is checked (and for new sign-ups). */
-export const SESSION_REMEMBER_DAYS = 30;
+export const SESSION_REMEMBER_DAYS = 90;
 /** Shorter token lifetime when “Remember me” is unchecked. */
 export const SESSION_TEMPORARY_HOURS = 12;
+/** Refresh a remembered session when less than this many days remain. */
+const SESSION_REFRESH_WITHIN_DAYS = 45;
 
 const USERNAME_RE = /^[a-z0-9_]{3,24}$/;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -39,6 +43,7 @@ type SessionPayload = {
   n: string; // display name
   i: string; // user id ("email:…")
   exp: number; // expiry (unix ms)
+  r?: 0 | 1; // remember me
 };
 
 function encoder() {
@@ -252,6 +257,7 @@ export async function createSessionToken(
     n: name,
     i: 'email:' + normalizeEmail(email),
     exp: Date.now() + ttlMs,
+    r: remember ? 1 : 0,
   };
   const body = toBase64Url(encoder().encode(JSON.stringify(payload)));
   return `${body}.${await sign(body)}`;
@@ -273,11 +279,15 @@ export async function readSessionToken(
     if (!payload?.e || !payload?.n || !payload?.i || !payload?.exp) return null;
     if (payload.exp < Date.now()) return null;
     const email = normalizeEmail(payload.e);
+    const remember =
+      payload.r === 1 ||
+      payload.exp - Date.now() > SESSION_TEMPORARY_HOURS * 60 * 60 * 1000;
     return {
       userId: payload.i || 'email:' + email,
       email,
       displayName: payload.n,
       fullName: payload.n,
+      remember,
     };
   } catch {
     return null;
@@ -288,16 +298,110 @@ function parseCookie(header: string | null, name: string) {
   if (!header) return null;
   for (const part of header.split(';')) {
     const [rawKey, ...rest] = part.trim().split('=');
-    if (rawKey === name) return decodeURIComponent(rest.join('='));
+    if (rawKey === name) {
+      try {
+        return decodeURIComponent(rest.join('='));
+      } catch {
+        return rest.join('=');
+      }
+    }
   }
   return null;
 }
 
+export function requestIsSecure(req: Request) {
+  const url = new URL(req.url);
+  if (url.protocol === 'https:') return true;
+  const forwarded = req.headers.get('x-forwarded-proto');
+  if (forwarded) return forwarded.split(',')[0]?.trim().toLowerCase() === 'https';
+  return false;
+}
+
 export async function getSessionUser(): Promise<SessionUser | null> {
+  try {
+    const jar = await cookies();
+    const fromStore = jar.get(SESSION_COOKIE)?.value;
+    if (fromStore) return readSessionToken(fromStore);
+  } catch {
+    // Fall through to the raw Cookie header when cookies() is unavailable.
+  }
   const requestHeaders = await headers();
   return readSessionToken(parseCookie(requestHeaders.get('cookie'), SESSION_COOKIE));
 }
 
+export async function writeSessionCookie(
+  token: string,
+  opts: { remember?: boolean; secure: boolean },
+) {
+  const remember = opts.remember !== false;
+  const header = sessionCookieHeader(token, opts.secure, { remember });
+  try {
+    const jar = await cookies();
+    const maxAge = remember ? SESSION_REMEMBER_DAYS * 24 * 60 * 60 : undefined;
+    jar.set({
+      name: SESSION_COOKIE,
+      value: token,
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      secure: opts.secure,
+      ...(maxAge
+        ? {
+            maxAge,
+            expires: new Date(Date.now() + maxAge * 1000),
+          }
+        : {}),
+    });
+  } catch {
+    // Header fallback below still applies if cookies() is unavailable.
+  }
+  return header;
+}
+
+export async function clearSessionCookie(secure: boolean) {
+  const header = clearSessionCookieHeader(secure);
+  try {
+    const jar = await cookies();
+    jar.set({
+      name: SESSION_COOKIE,
+      value: '',
+      httpOnly: true,
+      sameSite: 'lax',
+      path: '/',
+      secure,
+      maxAge: 0,
+      expires: new Date(0),
+    });
+  } catch {
+    // Header fallback below still applies if cookies() is unavailable.
+  }
+  return header;
+}
+
+/** Keep remembered sessions alive while the user keeps visiting. */
+export async function refreshSessionCookieIfNeeded(
+  user: SessionUser,
+  opts: { secure: boolean },
+) {
+  if (!user.remember) return null;
+  try {
+    const jar = await cookies();
+    const token = jar.get(SESSION_COOKIE)?.value;
+    if (!token) return null;
+    const [body] = token.split('.');
+    if (!body) return null;
+    const payload = JSON.parse(new TextDecoder().decode(fromBase64Url(body))) as SessionPayload;
+    const remainingMs = payload.exp - Date.now();
+    if (remainingMs > SESSION_REFRESH_WITHIN_DAYS * 24 * 60 * 60 * 1000) return null;
+    const next = await createSessionToken(user.email, user.displayName, { remember: true });
+    return writeSessionCookie(next, { remember: true, secure: opts.secure });
+  } catch {
+    // Refresh is best-effort; keep the existing cookie if reissue fails.
+    return null;
+  }
+}
+
+/** @deprecated Prefer writeSessionCookie — kept for any manual Set-Cookie callers. */
 export function sessionCookieHeader(
   token: string,
   secure: boolean,
@@ -306,16 +410,15 @@ export function sessionCookieHeader(
   const remember = opts?.remember !== false;
   const base = `${SESSION_COOKIE}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`;
   const secureFlag = secure ? '; Secure' : '';
-  if (!remember) {
-    // Browser session cookie — cleared when the browser quits.
-    return `${base}${secureFlag}`;
-  }
+  if (!remember) return `${base}${secureFlag}`;
   const maxAge = SESSION_REMEMBER_DAYS * 24 * 60 * 60;
-  return `${base}; Max-Age=${maxAge}${secureFlag}`;
+  const expires = new Date(Date.now() + maxAge * 1000).toUTCString();
+  return `${base}; Max-Age=${maxAge}; Expires=${expires}${secureFlag}`;
 }
 
+/** @deprecated Prefer clearSessionCookie. */
 export function clearSessionCookieHeader(secure: boolean) {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure ? '; Secure' : ''}`;
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT${secure ? '; Secure' : ''}`;
 }
 
 export function safeReturnPath(value: string | null | undefined) {

@@ -1,4 +1,5 @@
 import { aiConfigured, isSiteOwner } from '@/lib/ai-config';
+import { getSessionUser, refreshSessionCookieIfNeeded, requestIsSecure } from '@/lib/auth';
 import { emailConfigured } from '@/lib/email';
 import { identity, runtime, projectFor, failure, sameOrigin } from '@/lib/server';
 import {
@@ -12,9 +13,13 @@ import {
 import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
 import { avatarUrlFor } from '@/lib/avatar';
 import type { Project } from '@/lib/model';
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const u = await identity();
+    const session = await getSessionUser();
+    const refreshedCookie = session
+      ? await refreshSessionCookieIfNeeded(session, { secure: requestIsSecure(req) })
+      : null;
     const { DB } = runtime();
     await cleanupFiles(DB, runtime().BUCKET, u.userId);
     const profile = await DB.prepare(
@@ -22,26 +27,29 @@ export async function GET() {
     )
       .bind(u.userId)
       .first<any>();
-    return Response.json({
-      user: {
-        id: u.userId,
-        // Prefer username for local admin so the sidebar shows "admin".
-        name: profile.username || profile.name || u.displayName,
-        username: profile.username || '',
-        email: u.email,
-        address: profile.address || '',
-        phone: profile.phone || '',
-        language: profile.language,
-        timeZone: profile.time_zone,
-        notifications: !!profile.notifications,
-        tutorialSeen: !!profile.tutorial_seen,
-        avatarUrl: avatarUrlFor(u.userId, profile.avatar_key) || undefined,
+    return Response.json(
+      {
+        user: {
+          id: u.userId,
+          // Prefer username for local admin so the sidebar shows "admin".
+          name: profile.username || profile.name || u.displayName,
+          username: profile.username || '',
+          email: u.email,
+          address: profile.address || '',
+          phone: profile.phone || '',
+          language: profile.language,
+          timeZone: profile.time_zone,
+          notifications: !!profile.notifications,
+          tutorialSeen: !!profile.tutorial_seen,
+          avatarUrl: avatarUrlFor(u.userId, profile.avatar_key) || undefined,
+        },
+        projects: await listProjects(DB, u),
+        aiReady: await aiConfigured(),
+        canConfigureAI: isSiteOwner(u.email),
+        emailReady: emailConfigured(),
       },
-      projects: await listProjects(DB, u),
-      aiReady: await aiConfigured(),
-      canConfigureAI: isSiteOwner(u.email),
-      emailReady: emailConfigured(),
-    });
+      refreshedCookie ? { headers: { 'Set-Cookie': refreshedCookie } } : undefined,
+    );
   } catch (e) {
     return failure(e);
   }
