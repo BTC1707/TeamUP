@@ -118,6 +118,31 @@ const initials = (name: string) =>
     .slice(0, 2)
     .join('')
     .toUpperCase();
+
+function PersonAvatar({
+  name,
+  avatarUrl,
+  className = 'avatar',
+  alt = '',
+}: {
+  name: string;
+  avatarUrl?: string | null;
+  className?: string;
+  alt?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [avatarUrl]);
+  if (avatarUrl && !failed) {
+    return (
+      <span className={className}>
+        <img src={avatarUrl} alt={alt} onError={() => setFailed(true)} />
+      </span>
+    );
+  }
+  return <span className={className}>{initials(name || '–')}</span>;
+}
 function subscribeLocalAdminSession(onChange: () => void) {
   if (typeof window === 'undefined') return () => {};
   window.addEventListener('storage', onChange);
@@ -304,7 +329,10 @@ export default function Workspace({
     timeZone?: string;
     notifications?: boolean;
     tutorialSeen?: boolean;
+    avatarUrl?: string;
   } | null>(null);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [startupNoticeReady, setStartupNoticeReady] = useState(false);
   const [showStartupNotice, setShowStartupNotice] = useState(false);
@@ -668,6 +696,72 @@ export default function Workspace({
       );
     } catch (error) {
       toast.error((error as Error).message || 'Could not update notifications.');
+    }
+  }
+
+  function applyAvatarUrl(avatarUrl: string) {
+    const userId = user?.id;
+    const nextUrl = avatarUrl || undefined;
+    setUser((current) => (current ? { ...current, avatarUrl: nextUrl } : current));
+    setDraft((current: any) => ({ ...current, avatarUrl: nextUrl }));
+    if (!userId) return;
+    setProject((current) => ({
+      ...current,
+      members: current.members.map((member) =>
+        member.id === userId ? { ...member, avatarUrl: nextUrl } : member,
+      ),
+    }));
+    setProjects((current) =>
+      current.map((entry) => ({
+        ...entry,
+        members: entry.members.map((member) =>
+          member.id === userId ? { ...member, avatarUrl: nextUrl } : member,
+        ),
+      })),
+    );
+  }
+
+  async function uploadProfilePhoto(file: File) {
+    if (localOnly || demoMode) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+        applyAvatarUrl(dataUrl);
+        toast.success('Local profile photo updated (not saved to the cloud).');
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const result = await api('/api/avatar', { method: 'POST', body: form });
+      applyAvatarUrl(result.avatarUrl || '');
+      toast.success('Profile photo updated.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not upload the photo.');
+    } finally {
+      setAvatarBusy(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+    }
+  }
+
+  async function removeProfilePhoto() {
+    if (localOnly || demoMode) {
+      applyAvatarUrl('');
+      toast.success('Local profile photo removed.');
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      await api('/api/avatar', { method: 'DELETE' });
+      applyAvatarUrl('');
+      toast.success('Profile photo removed.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not remove the photo.');
+    } finally {
+      setAvatarBusy(false);
     }
   }
 
@@ -1571,12 +1665,21 @@ export default function Workspace({
     if (modal === 'profile') {
       setBusy(true);
       try {
+        const { avatarUrl: _avatarUrl, nudgeMessage: _nudgeMessage, ...profileFields } = draft;
         await api('/api/workspace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'profile', ...draft }),
+          body: JSON.stringify({ action: 'profile', ...profileFields }),
         });
-        setUser((u) => (u ? { ...u, ...draft } : u));
+        setUser((u) =>
+          u
+            ? {
+                ...u,
+                ...profileFields,
+                avatarUrl: u.avatarUrl,
+              }
+            : u,
+        );
         ok = true;
       } catch (e) {
         setError((e as Error).message);
@@ -1617,12 +1720,10 @@ export default function Workspace({
           >
             {t.status === 'progress' ? 'In progress' : t.status === 'done' ? 'Completed' : 'To do'}
           </span>
-          <span
-            className='avatar'
-            title={project.members.find((m) => m.id === t.assignee)?.name || 'Unassigned'}
-          >
-            {initials(project.members.find((m) => m.id === t.assignee)?.name || '–')}
-          </span>
+          <PersonAvatar
+            name={project.members.find((m) => m.id === t.assignee)?.name || '–'}
+            avatarUrl={project.members.find((m) => m.id === t.assignee)?.avatarUrl}
+          />
           <span className='task-due'>{fmt(t.due)}</span>
         </div>
       ))
@@ -1738,9 +1839,11 @@ export default function Workspace({
               })
             }
           >
-            <span className='avatar'>
-              {initials(isLocalAdmin ? 'admin' : user?.username || user?.name || 'Guest')}
-            </span>
+            <PersonAvatar
+              className='avatar'
+              name={isLocalAdmin ? 'admin' : user?.username || user?.name || 'Guest'}
+              avatarUrl={user?.avatarUrl}
+            />
             <span className='text-left'>
               {isLocalAdmin ? 'admin' : user?.username || user?.name || 'Your workspace'}
               <small>
@@ -1859,7 +1962,7 @@ export default function Workspace({
             </Popover>
             <button
               type='button'
-              className='avatar profile-avatar-button'
+              className='profile-avatar-button'
               aria-label='Open profile settings'
               title='Profile settings'
               onClick={() =>
@@ -1869,7 +1972,10 @@ export default function Workspace({
                 })
               }
             >
-              {initials(user?.username || user?.name || 'You')}
+              <PersonAvatar
+                name={user?.username || user?.name || 'You'}
+                avatarUrl={user?.avatarUrl}
+              />
             </button>
           </div>
         </header>
@@ -2114,9 +2220,7 @@ export default function Workspace({
                     <span>
                       <span className='flex -space-x-2'>
                         {project.members.slice(0, 4).map((m) => (
-                          <span className='avatar' key={m.id}>
-                            {initials(m.name)}
-                          </span>
+                          <PersonAvatar key={m.id} name={m.name} avatarUrl={m.avatarUrl} />
                         ))}
                       </span>
                     </span>
@@ -2205,7 +2309,7 @@ export default function Workspace({
                       const complete = assigned.filter((t) => t.status === 'done').length;
                       return (
                         <div className='member-row' key={m.id}>
-                          <span className='avatar'>{initials(m.name)}</span>
+                          <PersonAvatar name={m.name} avatarUrl={m.avatarUrl} />
                           <div className='member-name'>
                             {m.name}
                             <small className='block'>{assigned.length} assigned tasks</small>
@@ -2746,9 +2850,7 @@ export default function Workspace({
                       key={m.id}
                       onClick={() => open('teammate', m)}
                     >
-                      <span className='avatar' aria-hidden>
-                        {initials(m.name)}
-                      </span>
+                      <PersonAvatar name={m.name} avatarUrl={m.avatarUrl} />
                       <div className='member-name'>
                         {m.name}
                         <small className='block'>{m.email}</small>
@@ -2984,6 +3086,44 @@ export default function Workspace({
               )}
               {modal === 'profile' && (
                 <>
+                  <div className='profile-photo-row'>
+                    <PersonAvatar
+                      className='avatar avatar-lg'
+                      name={draft.name || user?.name || 'You'}
+                      avatarUrl={draft.avatarUrl || user?.avatarUrl}
+                    />
+                    <div className='profile-photo-actions'>
+                      <input
+                        ref={avatarInputRef}
+                        type='file'
+                        accept='image/jpeg,image/png,image/webp,image/gif'
+                        hidden
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) void uploadProfilePhoto(file);
+                        }}
+                      />
+                      <button
+                        type='button'
+                        className='btn'
+                        disabled={avatarBusy}
+                        onClick={() => avatarInputRef.current?.click()}
+                      >
+                        {avatarBusy ? 'Updating…' : draft.avatarUrl || user?.avatarUrl ? 'Change photo' : 'Upload photo'}
+                      </button>
+                      {(draft.avatarUrl || user?.avatarUrl) && (
+                        <button
+                          type='button'
+                          className='btn subtle'
+                          disabled={avatarBusy}
+                          onClick={() => void removeProfilePhoto()}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <p className='form-note'>JPEG, PNG, WebP, or GIF up to 2 MB.</p>
                   <label>
                     Phone (optional)
                     <input
@@ -3327,9 +3467,7 @@ export default function Workspace({
           {modal === 'teammate' && draft.id && (
             <div className='form teammate-detail'>
               <div className='teammate-detail-header'>
-                <span className='avatar' aria-hidden>
-                  {initials(draft.name || '')}
-                </span>
+                <PersonAvatar name={draft.name || ''} avatarUrl={draft.avatarUrl} />
                 <div>
                   <strong>{draft.name}</strong>
                   <small className='block'>{draft.email}</small>

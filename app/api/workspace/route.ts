@@ -10,6 +10,7 @@ import {
   cleanupFiles,
 } from '@/lib/store';
 import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
+import { avatarUrlFor } from '@/lib/avatar';
 import type { Project } from '@/lib/model';
 export async function GET() {
   try {
@@ -34,6 +35,7 @@ export async function GET() {
         timeZone: profile.time_zone,
         notifications: !!profile.notifications,
         tutorialSeen: !!profile.tutorial_seen,
+        avatarUrl: avatarUrlFor(u.userId, profile.avatar_key) || undefined,
       },
       projects: await listProjects(DB, u),
       aiReady: await aiConfigured(),

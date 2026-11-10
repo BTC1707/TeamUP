@@ -23,6 +23,8 @@ export const users = sqliteTable(
     passwordHash: text('password_hash'),
     address: text('address'),
     phone: text('phone'),
+    /** R2 object key for profile photo; null when using initials. */
+    avatarKey: text('avatar_key'),
   },
   (t) => [
     uniqueIndex('users_email').on(t.email),

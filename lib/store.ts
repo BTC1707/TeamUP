@@ -1,4 +1,5 @@
 import type { Project } from './model';
+import { avatarUrlFor } from './avatar';
 export type Actor = { userId: string; authUserId: string; email: string; displayName: string };
 export const userKey = (email: string) => 'user:' + email.trim().toLowerCase();
 const scoped = (project: string, id: string) =>
@@ -339,7 +340,7 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
   const results = await db.batch([
     db
       .prepare(
-        'SELECT u.id,u.name,u.email FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
+        'SELECT u.id,u.name,u.email,u.avatar_key FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
       )
       .bind(r.group_id),
     db.prepare('SELECT * FROM tasks WHERE project_id=? ORDER BY due_date,id').bind(id),
@@ -358,7 +359,12 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
     version: r.version,
     groupId: r.group_id,
     reminderHours: r.reminder_hours,
-    members: results[0].results as any,
+    members: (results[0].results as any[]).map((m) => ({
+      id: m.id,
+      name: m.name,
+      email: m.email,
+      ...(m.avatar_key ? { avatarUrl: avatarUrlFor(m.id, m.avatar_key) } : {}),
+    })),
     tasks: (results[1].results as any[]).map((t) => ({
       id: t.id,
       title: t.title,

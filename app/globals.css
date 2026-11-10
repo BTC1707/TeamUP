@@ -153,6 +153,30 @@ a:focus-visible {
   font-size: 12px;
   font-weight: 700;
   border: 2px solid white;
+  overflow: hidden;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.avatar-lg {
+  width: 72px;
+  height: 72px;
+  font-size: 22px;
+}
+.profile-photo-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.profile-photo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 .avatar:nth-child(2n) {
   background: #dff3ea;
@@ -164,7 +188,10 @@ a:focus-visible {
 }
 .profile-avatar-button {
   padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
+  border-radius: 50%;
   transition: box-shadow 0.15s ease, transform 0.15s ease;
 }
 .profile-avatar-button:hover {

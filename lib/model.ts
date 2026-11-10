@@ -1,4 +1,4 @@
-export type Member = { id: string; name: string; email: string };
+export type Member = { id: string; name: string; email: string; avatarUrl?: string };
 export type Task = {
   id: string;
   title: string;
