@@ -1367,8 +1367,24 @@ button.member-row-button:focus-visible {
   padding: 18px 22px;
   border-top: 1px solid #eee;
 }
-.file-row svg {
+.file-row > svg {
   color: #8b7dd0;
+  flex-shrink: 0;
+}
+.file-row-menu {
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.file-row-menu:hover {
+  background: #f4f2fe;
+}
+.file-row-menu:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .project-option-row {
   display: flex;

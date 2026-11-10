@@ -1905,6 +1905,34 @@ export default function Workspace({
         }
       }
     }
+    if (modal === 'rename-file') {
+      const nextName =
+        typeof draft.name === 'string' ? draft.name.replace(/\s+/g, ' ').trim().slice(0, 200) : '';
+      if (!draft.id || !nextName) {
+        setError('Enter a file name.');
+        return;
+      }
+      if (localOnly) {
+        setError('File renames need the live workspace.');
+        return;
+      }
+      setBusy(true);
+      try {
+        await api('/api/files', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: project.id, id: draft.id, name: nextName }),
+        });
+        setFiles((current) =>
+          current.map((entry) => (entry.id === draft.id ? { ...entry, name: nextName } : entry)),
+        );
+        ok = true;
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setBusy(false);
+      }
+    }
     if (modal === 'brief') {
       ok = await save({ ...project, description: draft.description || '' });
     }
@@ -2417,7 +2445,9 @@ export default function Workspace({
                   : project.name}
               </p>
             </div>
-            {view !== 'Project settings' && view !== 'Availability' && (
+            {view !== 'Project settings' &&
+              view !== 'Availability' &&
+              view !== 'Files' && (
               <button
                 className='btn primary'
                 data-tutorial-step='1'
@@ -3155,6 +3185,53 @@ export default function Workspace({
                     <a className='btn' href={'/api/files?project=' + project.id + '&id=' + f.id}>
                       <Download size={16} /> Download
                     </a>
+                    <DropdownMenu modal={false}>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type='button'
+                          className='file-row-menu'
+                          aria-label={`Options for ${f.name}`}
+                          disabled={busy || localOnly}
+                        >
+                          <MoreHorizontal size={18} color='#9ca4b3' />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align='end' className='milestone-dropdown'>
+                        <DropdownMenuItem
+                          onSelect={() => open('rename-file', { id: f.id, name: f.name })}
+                        >
+                          Rename
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            void (async () => {
+                              if (
+                                !window.confirm(
+                                  `Delete “${f.name}”? This removes it for everyone on the project.`,
+                                )
+                              )
+                                return;
+                              setBusy(true);
+                              try {
+                                await api('/api/files', {
+                                  method: 'DELETE',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ project: project.id, id: f.id }),
+                                });
+                                setFiles((current) => current.filter((entry) => entry.id !== f.id));
+                                toast.success('File deleted.');
+                              } catch (error) {
+                                toast.error((error as Error).message || 'Could not delete the file.');
+                              } finally {
+                                setBusy(false);
+                              }
+                            })();
+                          }}
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 ))
               ) : (
@@ -3451,6 +3528,7 @@ export default function Workspace({
                   reminders: 'Reminder preferences',
                   profile: 'Your account',
                   remove: 'Remove team member',
+                  'rename-file': 'Rename file',
                 }[modal]
               }
             </DialogTitle>
@@ -3469,7 +3547,9 @@ export default function Workspace({
                       ? draft.id
                         ? 'Update this milestone for the whole team.'
                         : 'Add a milestone to mark progress.'
-                      : 'Keep your team on the same page.'}
+                      : modal === 'rename-file'
+                        ? 'Choose a clearer name for this shared file.'
+                        : 'Keep your team on the same page.'}
             </DialogDescription>
           </DialogHeader>
           {error && <div className='error'>{error}</div>}
@@ -3482,20 +3562,29 @@ export default function Workspace({
               }}
             />
           )}
-          {['project', 'task', 'milestone', 'member', 'reminders', 'profile', 'brief'].includes(
-            modal,
-          ) && (
+          {[
+            'project',
+            'task',
+            'milestone',
+            'member',
+            'reminders',
+            'profile',
+            'brief',
+            'rename-file',
+          ].includes(modal) && (
             <form className='form' onSubmit={submit}>
-              {['project', 'member', 'profile'].includes(modal) && (
+              {['project', 'member', 'profile', 'rename-file'].includes(modal) && (
                 <label>
                   {modal === 'project'
                     ? 'Project name'
                     : modal === 'member'
                       ? 'Teammate name'
-                      : 'Name'}
+                      : modal === 'rename-file'
+                        ? 'File name'
+                        : 'Name'}
                   <input
                     required
-                    maxLength={100}
+                    maxLength={modal === 'rename-file' ? 200 : 100}
                     value={draft.name || ''}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                     placeholder={
@@ -3503,7 +3592,9 @@ export default function Workspace({
                         ? 'e.g. Marketing research project'
                         : modal === 'member'
                           ? 'e.g. Alex'
-                          : 'Your name'
+                          : modal === 'rename-file'
+                            ? 'e.g. Assignment brief.pdf'
+                            : 'Your name'
                     }
                   />
                 </label>
