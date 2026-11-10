@@ -9,6 +9,7 @@ import {
 } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import AssignmentChat from './assignment-chat';
+import AvatarCropDialog from './avatar-crop';
 import ConnectAI from './connect-ai';
 import InviteLink from './invite-link';
 import Tutorial from './tutorial';
@@ -119,7 +120,7 @@ const initials = (name: string) =>
     .join('')
     .toUpperCase();
 
-function PersonAvatar({
+function AvatarFace({
   name,
   avatarUrl,
   className = 'avatar',
@@ -142,6 +143,49 @@ function PersonAvatar({
     );
   }
   return <span className={className}>{initials(name || '–')}</span>;
+}
+
+function PersonAvatar({
+  name,
+  email,
+  avatarUrl,
+  className = 'avatar',
+  alt = '',
+  showInfo = false,
+}: {
+  name: string;
+  email?: string;
+  avatarUrl?: string | null;
+  className?: string;
+  alt?: string;
+  showInfo?: boolean;
+}) {
+  const face = <AvatarFace name={name} avatarUrl={avatarUrl} className={className} alt={alt} />;
+  if (!showInfo || !name || name === '–') return face;
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type='button'
+          className='avatar-info-trigger'
+          aria-label={`View ${name}`}
+          title={name}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {face}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align='center' className='person-card w-[240px]'>
+        <div className='person-card-body'>
+          <AvatarFace name={name} avatarUrl={avatarUrl} className='avatar avatar-lg' />
+          <div>
+            <strong>{name}</strong>
+            {email ? <small className='block'>{email}</small> : null}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
 }
 function subscribeLocalAdminSession(onChange: () => void) {
   if (typeof window === 'undefined') return () => {};
@@ -332,6 +376,7 @@ export default function Workspace({
     avatarUrl?: string;
   } | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarCropUrl, setAvatarCropUrl] = useState('');
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [startupNoticeReady, setStartupNoticeReady] = useState(false);
@@ -721,15 +766,44 @@ export default function Workspace({
     );
   }
 
+  function closeAvatarCrop() {
+    setAvatarCropUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return '';
+    });
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+  }
+
+  function beginAvatarCrop(file: File) {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image file.');
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+      return;
+    }
+    if (file.size > 8_000_000) {
+      toast.error('Choose a photo under 8 MB to crop.');
+      if (avatarInputRef.current) avatarInputRef.current.value = '';
+      return;
+    }
+    setAvatarCropUrl((current) => {
+      if (current) URL.revokeObjectURL(current);
+      return URL.createObjectURL(file);
+    });
+  }
+
   async function uploadProfilePhoto(file: File) {
     if (localOnly || demoMode) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-        applyAvatarUrl(dataUrl);
-        toast.success('Local profile photo updated (not saved to the cloud).');
-      };
-      reader.readAsDataURL(file);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () =>
+          typeof reader.result === 'string'
+            ? resolve(reader.result)
+            : reject(new Error('Could not read the photo.'));
+        reader.onerror = () => reject(new Error('Could not read the photo.'));
+        reader.readAsDataURL(file);
+      });
+      applyAvatarUrl(dataUrl);
+      toast.success('Local profile photo updated (not saved to the cloud).');
       return;
     }
     setAvatarBusy(true);
@@ -741,6 +815,7 @@ export default function Workspace({
       toast.success('Profile photo updated.');
     } catch (error) {
       toast.error((error as Error).message || 'Could not upload the photo.');
+      throw error;
     } finally {
       setAvatarBusy(false);
       if (avatarInputRef.current) avatarInputRef.current.value = '';
@@ -1722,7 +1797,9 @@ export default function Workspace({
           </span>
           <PersonAvatar
             name={project.members.find((m) => m.id === t.assignee)?.name || '–'}
+            email={project.members.find((m) => m.id === t.assignee)?.email}
             avatarUrl={project.members.find((m) => m.id === t.assignee)?.avatarUrl}
+            showInfo
           />
           <span className='task-due'>{fmt(t.due)}</span>
         </div>
@@ -2220,7 +2297,13 @@ export default function Workspace({
                     <span>
                       <span className='flex -space-x-2'>
                         {project.members.slice(0, 4).map((m) => (
-                          <PersonAvatar key={m.id} name={m.name} avatarUrl={m.avatarUrl} />
+                          <PersonAvatar
+                            key={m.id}
+                            name={m.name}
+                            email={m.email}
+                            avatarUrl={m.avatarUrl}
+                            showInfo
+                          />
                         ))}
                       </span>
                     </span>
@@ -2309,7 +2392,12 @@ export default function Workspace({
                       const complete = assigned.filter((t) => t.status === 'done').length;
                       return (
                         <div className='member-row' key={m.id}>
-                          <PersonAvatar name={m.name} avatarUrl={m.avatarUrl} />
+                          <PersonAvatar
+                            name={m.name}
+                            email={m.email}
+                            avatarUrl={m.avatarUrl}
+                            showInfo
+                          />
                           <div className='member-name'>
                             {m.name}
                             <small className='block'>{assigned.length} assigned tasks</small>
@@ -2850,7 +2938,12 @@ export default function Workspace({
                       key={m.id}
                       onClick={() => open('teammate', m)}
                     >
-                      <PersonAvatar name={m.name} avatarUrl={m.avatarUrl} />
+                      <PersonAvatar
+                        name={m.name}
+                        email={m.email}
+                        avatarUrl={m.avatarUrl}
+                        showInfo
+                      />
                       <div className='member-name'>
                         {m.name}
                         <small className='block'>{m.email}</small>
@@ -3100,7 +3193,7 @@ export default function Workspace({
                         hidden
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) void uploadProfilePhoto(file);
+                          if (file) beginAvatarCrop(file);
                         }}
                       />
                       <button
@@ -3123,7 +3216,9 @@ export default function Workspace({
                       )}
                     </div>
                   </div>
-                  <p className='form-note'>JPEG, PNG, WebP, or GIF up to 2 MB.</p>
+                  <p className='form-note'>
+                    JPEG, PNG, WebP, or GIF. After you choose a photo, drag and zoom to frame it.
+                  </p>
                   <label>
                     Phone (optional)
                     <input
@@ -3748,6 +3843,16 @@ export default function Workspace({
           )}
         </DialogContent>
       </Dialog>
+      <AvatarCropDialog
+        open={!!avatarCropUrl}
+        imageUrl={avatarCropUrl}
+        busy={avatarBusy}
+        onCancel={closeAvatarCrop}
+        onConfirm={async (file) => {
+          await uploadProfilePhoto(file);
+          closeAvatarCrop();
+        }}
+      />
       <Toaster position='top-center' richColors closeButton />
     </SidebarProvider>
   );
