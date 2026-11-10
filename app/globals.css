@@ -193,19 +193,34 @@ button.avatar-info-trigger:focus-visible {
 .person-card {
   display: grid;
   gap: 12px;
+  overflow: hidden;
 }
 .person-card-body {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+.person-card-body > .avatar,
+.person-card-body > .avatar-lg {
+  flex-shrink: 0;
+}
+.person-card-meta {
+  min-width: 0;
+  flex: 1;
 }
 .person-card-body strong {
   display: block;
   font-size: 15px;
   color: #1f2430;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .person-card-body small {
+  display: block;
   color: #969eac;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .avatar-crop {
   display: grid;
