@@ -2179,6 +2179,50 @@ button.member-row-button:focus-visible {
   flex-wrap: wrap;
   margin-top: 16px;
 }
+@media (min-width: 761px) {
+  .tutorial-actions {
+    justify-content: center;
+  }
+}
+.tutorial-desktop-chip {
+  position: fixed;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: min(560px, calc(100vw - 28px));
+  padding: 10px 12px;
+  transform: translateX(-50%);
+  border: 1px solid #c9c2f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 28px #222b4022;
+}
+.tutorial-desktop-chip strong {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #5b54d9;
+}
+.tutorial-desktop-chip span {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #222b40;
+}
+.tutorial-desktop-chip-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.tutorial-desktop-chip-actions .btn {
+  min-height: 36px;
+  padding: 0 12px;
+}
 body.tutorial-running .app-main {
   box-shadow: inset 3px 0 0 #5149c7;
 }

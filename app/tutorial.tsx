@@ -53,6 +53,7 @@ export default function Tutorial({
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const [mobilePhase, setMobilePhase] = useState<'guide' | 'practice'>('guide');
+  const [desktopHidden, setDesktopHidden] = useState(false);
 
   const steps = [
     [
@@ -112,6 +113,7 @@ export default function Tutorial({
 
   useEffect(() => {
     setMobilePhase('guide');
+    setDesktopHidden(false);
     setPos(null);
     const timer = window.setTimeout(() => focusTutorialStep(step), 120);
     return () => window.clearTimeout(timer);
@@ -206,6 +208,27 @@ export default function Tutorial({
     );
   }
 
+  if (!mobile && desktopHidden) {
+    return (
+      <div className='tutorial-desktop-chip' role='status'>
+        <div>
+          <strong>
+            Step {step + 1}/{steps.length}
+          </strong>
+          <span>{title}</span>
+        </div>
+        <div className='tutorial-desktop-chip-actions'>
+          <button type='button' className='btn subtle' onClick={() => setDesktopHidden(false)}>
+            Show tip
+          </button>
+          <button type='button' className='btn primary' disabled={!ready} onClick={onNext}>
+            {ready ? 'Next' : 'Working…'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {!mobile && (
@@ -288,18 +311,17 @@ export default function Tutorial({
                 ? 'Next step'
                 : 'Complete to continue'}
           </button>
-          {mobile && (
-            <button
-              type='button'
-              className='btn subtle'
-              onClick={() => {
-                focusTutorialStep(step);
-                setMobilePhase('practice');
-              }}
-            >
-              Hide tip & try it
-            </button>
-          )}
+          <button
+            type='button'
+            className='btn subtle'
+            onClick={() => {
+              focusTutorialStep(step);
+              if (mobile) setMobilePhase('practice');
+              else setDesktopHidden(true);
+            }}
+          >
+            Hide tip & try it
+          </button>
         </div>
       </section>
     </>
