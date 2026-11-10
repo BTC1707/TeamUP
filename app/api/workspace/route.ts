@@ -199,7 +199,14 @@ export async function POST(req: Request) {
       return Response.json({ error: 'Each teammate needs a different email.' }, { status: 400 });
     const scope = (id: string) => (id.startsWith(p.id + ':') ? id : p.id + ':' + id);
     const ms = new Map(p.milestones.map((m) => [m.id, scope(m.id)]));
-    p.milestones = p.milestones.map((m) => ({ ...m, id: scope(m.id) }));
+    const previousPhotoKeys = new Map(
+      (previous?.milestones || []).map((m) => [m.id, m.photoKey || ''] as const),
+    );
+    p.milestones = p.milestones.map((m) => {
+      const id = scope(m.id);
+      const photoKey = previousPhotoKeys.get(id) || previousPhotoKeys.get(m.id) || m.photoKey;
+      return { ...m, id, ...(photoKey ? { photoKey } : { photoKey: undefined }) };
+    });
     for (const t of p.tasks) {
       t.id = scope(t.id);
       t.assignee = ids.get(t.assignee) || '';

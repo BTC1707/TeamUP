@@ -86,6 +86,8 @@ export const projects = sqliteTable('projects', {
   reminderHours: integer('reminder_hours').notNull().default(24),
   normalized: integer('normalized').notNull().default(0),
   writeToken: text('write_token'),
+  /** R2 object key for project cover photo. */
+  photoKey: text('photo_key'),
 });
 export const milestones = sqliteTable(
   'milestones',
@@ -98,6 +100,8 @@ export const milestones = sqliteTable(
     description: text('description').notNull().default(''),
     dueDate: text('due_date').notNull(),
     status: text('status').notNull().default('todo'),
+    /** R2 object key for milestone photo. */
+    photoKey: text('photo_key'),
   },
   (t) => [uniqueIndex('milestone_project_id').on(t.projectId, t.id)],
 );

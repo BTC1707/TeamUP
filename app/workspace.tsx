@@ -376,8 +376,15 @@ export default function Workspace({
     avatarUrl?: string;
   } | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
-  const [avatarCropUrl, setAvatarCropUrl] = useState('');
+  const [photoCrop, setPhotoCrop] = useState<{
+    url: string;
+    kind: 'avatar' | 'project' | 'milestone';
+    projectId?: string;
+    milestoneId?: string;
+  } | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const projectPhotoInputRef = useRef<HTMLInputElement>(null);
+  const milestonePhotoInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [startupNoticeReady, setStartupNoticeReady] = useState(false);
   const [showStartupNotice, setShowStartupNotice] = useState(false);
@@ -766,43 +773,88 @@ export default function Workspace({
     );
   }
 
-  function closeAvatarCrop() {
-    setAvatarCropUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return '';
+  function readLocalImageDataUrl(file: File) {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () =>
+        typeof reader.result === 'string'
+          ? resolve(reader.result)
+          : reject(new Error('Could not read the photo.'));
+      reader.onerror = () => reject(new Error('Could not read the photo.'));
+      reader.readAsDataURL(file);
     });
-    if (avatarInputRef.current) avatarInputRef.current.value = '';
   }
 
-  function beginAvatarCrop(file: File) {
+  function closePhotoCrop() {
+    setPhotoCrop((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+    if (projectPhotoInputRef.current) projectPhotoInputRef.current.value = '';
+    if (milestonePhotoInputRef.current) milestonePhotoInputRef.current.value = '';
+  }
+
+  function beginPhotoCrop(
+    file: File,
+    kind: 'avatar' | 'project' | 'milestone',
+    ids?: { projectId?: string; milestoneId?: string },
+  ) {
     if (!file.type.startsWith('image/')) {
       toast.error('Choose an image file.');
-      if (avatarInputRef.current) avatarInputRef.current.value = '';
       return;
     }
     if (file.size > 8_000_000) {
       toast.error('Choose a photo under 8 MB to crop.');
-      if (avatarInputRef.current) avatarInputRef.current.value = '';
       return;
     }
-    setAvatarCropUrl((current) => {
-      if (current) URL.revokeObjectURL(current);
-      return URL.createObjectURL(file);
+    setPhotoCrop((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return {
+        url: URL.createObjectURL(file),
+        kind,
+        projectId: ids?.projectId,
+        milestoneId: ids?.milestoneId,
+      };
     });
+  }
+
+  function applyProjectPhotoUrl(projectId: string, photoUrl: string) {
+    const nextUrl = photoUrl || undefined;
+    setProject((current) =>
+      current.id === projectId ? { ...current, photoUrl: nextUrl } : current,
+    );
+    setProjects((current) =>
+      current.map((entry) =>
+        entry.id === projectId ? { ...entry, photoUrl: nextUrl } : entry,
+      ),
+    );
+    setDraft((current: any) =>
+      current?.id === projectId ? { ...current, photoUrl: nextUrl } : current,
+    );
+  }
+
+  function applyMilestonePhotoUrl(projectId: string, milestoneId: string, photoUrl: string) {
+    const nextUrl = photoUrl || undefined;
+    const patch = (entry: Project) =>
+      entry.id !== projectId
+        ? entry
+        : {
+            ...entry,
+            milestones: entry.milestones.map((milestone) =>
+              milestone.id === milestoneId ? { ...milestone, photoUrl: nextUrl } : milestone,
+            ),
+          };
+    setProject(patch);
+    setProjects((current) => current.map(patch));
+    setDraft((current: any) =>
+      current?.id === milestoneId ? { ...current, photoUrl: nextUrl } : current,
+    );
   }
 
   async function uploadProfilePhoto(file: File) {
     if (localOnly || demoMode) {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () =>
-          typeof reader.result === 'string'
-            ? resolve(reader.result)
-            : reject(new Error('Could not read the photo.'));
-        reader.onerror = () => reject(new Error('Could not read the photo.'));
-        reader.readAsDataURL(file);
-      });
-      applyAvatarUrl(dataUrl);
+      applyAvatarUrl(await readLocalImageDataUrl(file));
       toast.success('Local profile photo updated (not saved to the cloud).');
       return;
     }
@@ -835,6 +887,101 @@ export default function Workspace({
       toast.success('Profile photo removed.');
     } catch (error) {
       toast.error((error as Error).message || 'Could not remove the photo.');
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function uploadProjectPhoto(file: File, projectId: string) {
+    if (!projectId) throw new Error('Save the project before adding a photo.');
+    if (localOnly || demoMode) {
+      applyProjectPhotoUrl(projectId, await readLocalImageDataUrl(file));
+      toast.success('Local project photo updated (not saved to the cloud).');
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      const form = new FormData();
+      form.append('project', projectId);
+      form.append('file', file);
+      const result = await api('/api/project-photo', { method: 'POST', body: form });
+      applyProjectPhotoUrl(projectId, result.photoUrl || '');
+      toast.success('Project photo updated.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not upload the project photo.');
+      throw error;
+    } finally {
+      setAvatarBusy(false);
+      if (projectPhotoInputRef.current) projectPhotoInputRef.current.value = '';
+    }
+  }
+
+  async function removeProjectPhoto(projectId: string) {
+    if (!projectId) return;
+    if (localOnly || demoMode) {
+      applyProjectPhotoUrl(projectId, '');
+      toast.success('Local project photo removed.');
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      await api('/api/project-photo', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: projectId }),
+      });
+      applyProjectPhotoUrl(projectId, '');
+      toast.success('Project photo removed.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not remove the project photo.');
+    } finally {
+      setAvatarBusy(false);
+    }
+  }
+
+  async function uploadMilestonePhoto(file: File, projectId: string, milestoneId: string) {
+    if (!projectId || !milestoneId) throw new Error('Save the milestone before adding a photo.');
+    if (localOnly || demoMode) {
+      applyMilestonePhotoUrl(projectId, milestoneId, await readLocalImageDataUrl(file));
+      toast.success('Local milestone photo updated (not saved to the cloud).');
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      const form = new FormData();
+      form.append('project', projectId);
+      form.append('milestone', milestoneId);
+      form.append('file', file);
+      const result = await api('/api/milestone-photo', { method: 'POST', body: form });
+      applyMilestonePhotoUrl(projectId, milestoneId, result.photoUrl || '');
+      toast.success('Milestone photo updated.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not upload the milestone photo.');
+      throw error;
+    } finally {
+      setAvatarBusy(false);
+      if (milestonePhotoInputRef.current) milestonePhotoInputRef.current.value = '';
+    }
+  }
+
+  async function removeMilestonePhoto(projectId: string, milestoneId: string) {
+    if (!projectId || !milestoneId) return;
+    if (localOnly || demoMode) {
+      applyMilestonePhotoUrl(projectId, milestoneId, '');
+      toast.success('Local milestone photo removed.');
+      return;
+    }
+    setAvatarBusy(true);
+    try {
+      await api('/api/milestone-photo', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: projectId, milestone: milestoneId }),
+      });
+      applyMilestonePhotoUrl(projectId, milestoneId, '');
+      toast.success('Milestone photo removed.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not remove the milestone photo.');
     } finally {
       setAvatarBusy(false);
     }
@@ -1603,59 +1750,76 @@ export default function Workspace({
         setError('Sign in before creating your project.');
         return;
       }
-      const newId = uid();
-      const rubricFiles: File[] = Array.isArray(draft.rubricFiles) ? draft.rubricFiles : [];
-      const rubricPaste =
-        typeof draft.rubricPaste === 'string' ? draft.rubricPaste.trim() : '';
-      const wantsPlan =
-        aiReady && (rubricFiles.length > 0 || rubricPaste.length >= 30);
-      const created: Project = {
-        id: newId,
-        name: draft.name,
-        course: draft.course,
-        description: draft.description || rubricPaste.slice(0, 5000),
-        due: draft.due,
-        members: [{ id: user.id, name: user.name, email: user.email }],
-        tasks: [],
-        milestones: [],
-        availability: {},
-        reminderHours: 24,
-        version: 0,
-        owner: user.id,
-      };
-      ok = await save(created, true);
-      if (ok && wantsPlan) {
-        try {
-          setBusy(true);
-          const text = rubricPaste || String(draft.description || '');
-          let ids: string[] = [];
-          if (!localOnly) ids = await uploadPlanFiles(newId, rubricFiles);
-          else setPlanFiles(rubricFiles.slice(0, 3));
-          const suggested = await requestPlan(
-            newId,
-            text,
-            ids,
-            draft.includeMilestones !== false,
-            created,
-            rubricFiles,
-          );
-          setPlanFileIds(ids);
-          setIncludeMilestones(draft.includeMilestones !== false);
-          setRequirements(text);
-          setPlan(suggested);
-          setPlanFromCreateId(newId);
-          setModal('planner');
-          toast.message('Review the suggested plan — Cancel removes this project.');
+      if (draft.id) {
+        const target =
+          projects.find((entry) => entry.id === draft.id) ||
+          (project.id === draft.id ? project : null);
+        if (!target) {
+          setError('Project not found.');
           return;
-        } catch (err) {
-          toast.error(
-            (err as Error).message ||
-              'Project created, but AI planning failed. You can open the AI planner anytime.',
-          );
-          setModal('');
-          return;
-        } finally {
-          setBusy(false);
+        }
+        ok = await save({
+          ...target,
+          name: draft.name,
+          course: draft.course || '',
+          description: draft.description || '',
+          due: draft.due,
+        });
+      } else {
+        const newId = uid();
+        const rubricFiles: File[] = Array.isArray(draft.rubricFiles) ? draft.rubricFiles : [];
+        const rubricPaste =
+          typeof draft.rubricPaste === 'string' ? draft.rubricPaste.trim() : '';
+        const wantsPlan =
+          aiReady && (rubricFiles.length > 0 || rubricPaste.length >= 30);
+        const created: Project = {
+          id: newId,
+          name: draft.name,
+          course: draft.course,
+          description: draft.description || rubricPaste.slice(0, 5000),
+          due: draft.due,
+          members: [{ id: user.id, name: user.name, email: user.email }],
+          tasks: [],
+          milestones: [],
+          availability: {},
+          reminderHours: 24,
+          version: 0,
+          owner: user.id,
+        };
+        ok = await save(created, true);
+        if (ok && wantsPlan) {
+          try {
+            setBusy(true);
+            const text = rubricPaste || String(draft.description || '');
+            let ids: string[] = [];
+            if (!localOnly) ids = await uploadPlanFiles(newId, rubricFiles);
+            else setPlanFiles(rubricFiles.slice(0, 3));
+            const suggested = await requestPlan(
+              newId,
+              text,
+              ids,
+              draft.includeMilestones !== false,
+              created,
+              rubricFiles,
+            );
+            setPlanFileIds(ids);
+            setIncludeMilestones(draft.includeMilestones !== false);
+            setRequirements(text);
+            setPlan(suggested);
+            setPlanFromCreateId(newId);
+            setModal('planner');
+            toast.message('Review the suggested plan — Cancel removes this project.');
+            return;
+          } catch (err) {
+            toast.error(
+              (err as Error).message ||
+                'Project created, but AI planning failed. You can open the AI planner anytime.',
+            );
+            setModal('');
+            return;
+          } finally {
+            setBusy(false);
+          }
         }
       }
     }
@@ -1677,19 +1841,35 @@ export default function Workspace({
       });
     }
     if (modal === 'milestone') {
-      ok = await save({
-        ...project,
-        milestones: [
-          ...project.milestones,
-          {
-            id: uid(),
-            title: draft.title,
-            description: draft.description || '',
-            due: draft.due,
-            done: false,
-          },
-        ],
-      });
+      if (draft.id) {
+        ok = await save({
+          ...project,
+          milestones: project.milestones.map((entry) =>
+            entry.id === draft.id
+              ? {
+                  ...entry,
+                  title: draft.title,
+                  description: draft.description || '',
+                  due: draft.due,
+                }
+              : entry,
+          ),
+        });
+      } else {
+        ok = await save({
+          ...project,
+          milestones: [
+            ...project.milestones,
+            {
+              id: uid(),
+              title: draft.title,
+              description: draft.description || '',
+              due: draft.due,
+              done: false,
+            },
+          ],
+        });
+      }
     }
     let memberInviteHandled = false;
     if (modal === 'member') {
@@ -1831,13 +2011,39 @@ export default function Workspace({
         >
           {m.done ? <Check size={15} /> : <Flag size={13} />}
         </button>
-        <div>
+        {m.photoUrl ? (
+          <span className='milestone-photo'>
+            <img src={m.photoUrl} alt='' />
+          </span>
+        ) : null}
+        <div className='milestone-copy'>
           <p>{m.title}</p>
           <small>
             {fmt(m.due)}
             {m.done ? ' · Completed' : ''}
           </small>
         </div>
+        <DropdownMenu modal={false}>
+          <DropdownMenuTrigger asChild>
+            <button
+              type='button'
+              className='milestone-row-menu'
+              aria-label={`Options for ${m.title}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <MoreHorizontal size={18} color='#9ca4b3' />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align='end' className='milestone-dropdown'>
+            <DropdownMenuItem
+              onSelect={() => {
+                if (requireProject()) open('milestone', m);
+              }}
+            >
+              Edit milestone
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     ));
   return (
@@ -1887,17 +2093,60 @@ export default function Workspace({
           </div>
           {projects.length ? (
             projects.map((p) => (
-              <button
+              <div
                 key={p.id}
-                title={p.name}
-                className={'project-option ' + (p.id === project.id ? 'active' : '')}
-                onClick={() => {
-                  selectProject(p);
-                  setError('');
-                }}
+                className={'project-option-row ' + (p.id === project.id ? 'active' : '')}
               >
-                ▧ &nbsp; {p.name}
-              </button>
+                <button
+                  type='button'
+                  title={p.name}
+                  className='project-option'
+                  onClick={() => {
+                    selectProject(p);
+                    setError('');
+                  }}
+                >
+                  {p.photoUrl ? (
+                    <span className='project-option-thumb'>
+                      <img src={p.photoUrl} alt='' />
+                    </span>
+                  ) : (
+                    <span className='project-option-glyph' aria-hidden>
+                      ▧
+                    </span>
+                  )}
+                  <span className='project-option-name'>{p.name}</span>
+                </button>
+                <DropdownMenu modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type='button'
+                      className='project-option-menu'
+                      aria-label={`Options for ${p.name}`}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <MoreHorizontal size={16} color='#9ca4b3' />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align='end' className='milestone-dropdown'>
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        selectProject(p);
+                        open('project', {
+                          id: p.id,
+                          name: p.name,
+                          course: p.course,
+                          description: p.description,
+                          due: p.due,
+                          photoUrl: p.photoUrl,
+                        });
+                      }}
+                    >
+                      Edit project
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             ))
           ) : (
             <p className='project-option muted'>No projects yet</p>
@@ -2282,7 +2531,13 @@ export default function Workspace({
           {!isDemo && view === 'Overview' && (
             <>
               <section className='project-banner'>
-                <div>
+                <div className='project-banner-main'>
+                  {project.photoUrl ? (
+                    <span className='project-banner-photo'>
+                      <img src={project.photoUrl} alt='' />
+                    </span>
+                  ) : null}
+                  <div>
                   <span className='eyebrow'>{project.course || 'GROUP PROJECT'}</span>
                   <h2>{project.name}</h2>
                   <div className='banner-meta'>
@@ -2307,6 +2562,7 @@ export default function Workspace({
                         ))}
                       </span>
                     </span>
+                  </div>
                   </div>
                 </div>
                 <div className='progress-summary'>
@@ -2962,6 +3218,75 @@ export default function Workspace({
               <section className='panel'>
                 <div className='panel-heading'>
                   <div>
+                    <h2>Project details</h2>
+                    <p className='subtext'>
+                      Update the basics and a shared project photo everyone can see.
+                    </p>
+                  </div>
+                  <button
+                    type='button'
+                    className='btn subtle'
+                    onClick={() =>
+                      open('project', {
+                        id: project.id,
+                        name: project.name,
+                        course: project.course,
+                        description: project.description,
+                        due: project.due,
+                        photoUrl: project.photoUrl,
+                      })
+                    }
+                  >
+                    Edit details
+                  </button>
+                </div>
+                <div className='profile-photo-row'>
+                  <span className={'project-settings-photo' + (project.photoUrl ? '' : ' empty')}>
+                    {project.photoUrl ? (
+                      <img src={project.photoUrl} alt='' />
+                    ) : (
+                      <span>No photo</span>
+                    )}
+                  </span>
+                  <div className='profile-photo-actions'>
+                    <button
+                      type='button'
+                      className='btn'
+                      disabled={avatarBusy || !project.id}
+                      onClick={() => projectPhotoInputRef.current?.click()}
+                    >
+                      {avatarBusy
+                        ? 'Updating…'
+                        : project.photoUrl
+                          ? 'Change photo'
+                          : 'Upload photo'}
+                    </button>
+                    {project.photoUrl ? (
+                      <button
+                        type='button'
+                        className='btn subtle'
+                        disabled={avatarBusy}
+                        onClick={() => void removeProjectPhoto(project.id)}
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <p className='form-note'>
+                  JPEG, PNG, WebP, or GIF. Drag and zoom after you choose a photo.
+                </p>
+                <div className='project-settings-summary'>
+                  <div>
+                    <strong>{project.name}</strong>
+                    <small className='block'>{project.course || 'No course listed'}</small>
+                  </div>
+                  <small>Due {fmt(project.due)}</small>
+                </div>
+              </section>
+              <section className='panel'>
+                <div className='panel-heading'>
+                  <div>
                     <h2>Share project</h2>
                     <p className='subtext'>
                       Invite teammates to {project.name}. Only project members can access your work.
@@ -3117,9 +3442,9 @@ export default function Workspace({
                   'delete-project': 'Delete project',
                   'ai-settings': 'Connect AI',
                   brief: 'Assignment brief',
-                  project: 'Create a project',
+                  project: draft.id ? 'Edit project' : 'Create a project',
                   task: draft.id ? 'Edit task' : 'Add a task',
-                  milestone: 'Add a milestone',
+                  milestone: draft.id ? 'Edit milestone' : 'Add a milestone',
                   member: 'Add a team member',
                   teammate: draft.name || 'Teammate',
                   planner: plan ? 'Review suggested plan' : 'Plan your project',
@@ -3137,8 +3462,14 @@ export default function Workspace({
                 : modal === 'teammate'
                   ? 'Review their assigned work and move tasks to someone else if needed.'
                   : modal === 'project'
-                    ? 'Give your group a place to make progress.'
-                    : 'Keep your team on the same page.'}
+                    ? draft.id
+                      ? 'Update the project details teammates see.'
+                      : 'Give your group a place to make progress.'
+                    : modal === 'milestone'
+                      ? draft.id
+                        ? 'Update this milestone for the whole team.'
+                        : 'Add a milestone to mark progress.'
+                      : 'Keep your team on the same page.'}
             </DialogDescription>
           </DialogHeader>
           {error && <div className='error'>{error}</div>}
@@ -3193,7 +3524,7 @@ export default function Workspace({
                         hidden
                         onChange={(e) => {
                           const file = e.target.files?.[0];
-                          if (file) beginAvatarCrop(file);
+                          if (file) beginPhotoCrop(file, 'avatar');
                         }}
                       />
                       <button
@@ -3302,48 +3633,96 @@ export default function Workspace({
                       placeholder='What is your group working toward?'
                     />
                   </label>
-                  <label>
-                    Rubric or instructions (optional)
-                    <textarea
-                      value={draft.rubricPaste || ''}
-                      maxLength={30000}
-                      onChange={(e) => setDraft({ ...draft, rubricPaste: e.target.value })}
-                      placeholder='Paste the assignment rubric or brief for AI to break into tasks…'
-                    />
-                  </label>
-                  <label>
-                    Upload rubric files (optional)
-                    <input
-                      type='file'
-                      multiple
-                      accept={PLAN_FILE_ACCEPT}
-                      onChange={(e) =>
-                        setDraft({
-                          ...draft,
-                          rubricFiles: Array.from(e.target.files || []).slice(0, 3),
-                        })
-                      }
-                    />
-                  </label>
-                  <p className='form-note'>
-                    PDF, DOCX, images, or text — up to 3 files, 5 MB each. If AI is connected, we’ll
-                    suggest tasks after create for you to review.
-                  </p>
-                  {Array.isArray(draft.rubricFiles) && draft.rubricFiles.length > 0 && (
-                    <p className='form-note'>
-                      Selected: {draft.rubricFiles.map((f: File) => f.name).join(', ')}
-                    </p>
+                  {draft.id ? (
+                    <>
+                      <div className='profile-photo-row'>
+                        <span
+                          className={
+                            'project-settings-photo' + (draft.photoUrl ? '' : ' empty')
+                          }
+                        >
+                          {draft.photoUrl ? (
+                            <img src={draft.photoUrl} alt='' />
+                          ) : (
+                            <span>No photo</span>
+                          )}
+                        </span>
+                        <div className='profile-photo-actions'>
+                          <button
+                            type='button'
+                            className='btn'
+                            disabled={avatarBusy}
+                            onClick={() => projectPhotoInputRef.current?.click()}
+                          >
+                            {avatarBusy
+                              ? 'Updating…'
+                              : draft.photoUrl
+                                ? 'Change photo'
+                                : 'Upload photo'}
+                          </button>
+                          {draft.photoUrl ? (
+                            <button
+                              type='button'
+                              className='btn subtle'
+                              disabled={avatarBusy}
+                              onClick={() => void removeProjectPhoto(draft.id)}
+                            >
+                              Remove
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <p className='form-note'>
+                        Shared with everyone on this project. Drag and zoom after choosing a photo.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <label>
+                        Rubric or instructions (optional)
+                        <textarea
+                          value={draft.rubricPaste || ''}
+                          maxLength={30000}
+                          onChange={(e) => setDraft({ ...draft, rubricPaste: e.target.value })}
+                          placeholder='Paste the assignment rubric or brief for AI to break into tasks…'
+                        />
+                      </label>
+                      <label>
+                        Upload rubric files (optional)
+                        <input
+                          type='file'
+                          multiple
+                          accept={PLAN_FILE_ACCEPT}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              rubricFiles: Array.from(e.target.files || []).slice(0, 3),
+                            })
+                          }
+                        />
+                      </label>
+                      <p className='form-note'>
+                        PDF, DOCX, images, or text — up to 3 files, 5 MB each. If AI is connected,
+                        we’ll suggest tasks after create for you to review. You can add a project
+                        photo after creating it.
+                      </p>
+                      {Array.isArray(draft.rubricFiles) && draft.rubricFiles.length > 0 && (
+                        <p className='form-note'>
+                          Selected: {draft.rubricFiles.map((f: File) => f.name).join(', ')}
+                        </p>
+                      )}
+                      <label className='flex gap-2 items-center'>
+                        <input
+                          type='checkbox'
+                          checked={draft.includeMilestones !== false}
+                          onChange={(e) =>
+                            setDraft({ ...draft, includeMilestones: e.target.checked })
+                          }
+                        />
+                        Include milestone suggestions
+                      </label>
+                    </>
                   )}
-                  <label className='flex gap-2 items-center'>
-                    <input
-                      type='checkbox'
-                      checked={draft.includeMilestones !== false}
-                      onChange={(e) =>
-                        setDraft({ ...draft, includeMilestones: e.target.checked })
-                      }
-                    />
-                    Include milestone suggestions
-                  </label>
                 </>
               )}
               {['task', 'milestone'].includes(modal) && (
@@ -3381,6 +3760,51 @@ export default function Workspace({
                     onChange={(e) => setDraft({ ...draft, due: e.target.value })}
                   />
                 </label>
+              )}
+              {modal === 'milestone' && draft.id && (
+                <>
+                  <div className='profile-photo-row'>
+                    <span
+                      className={'project-settings-photo' + (draft.photoUrl ? '' : ' empty')}
+                    >
+                      {draft.photoUrl ? (
+                        <img src={draft.photoUrl} alt='' />
+                      ) : (
+                        <span>No photo</span>
+                      )}
+                    </span>
+                    <div className='profile-photo-actions'>
+                      <button
+                        type='button'
+                        className='btn'
+                        disabled={avatarBusy}
+                        onClick={() => milestonePhotoInputRef.current?.click()}
+                      >
+                        {avatarBusy
+                          ? 'Updating…'
+                          : draft.photoUrl
+                            ? 'Change photo'
+                            : 'Upload photo'}
+                      </button>
+                      {draft.photoUrl ? (
+                        <button
+                          type='button'
+                          className='btn subtle'
+                          disabled={avatarBusy}
+                          onClick={() => void removeMilestonePhoto(project.id, draft.id)}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className='form-note'>
+                    Shared with everyone on this project. Drag and zoom after choosing a photo.
+                  </p>
+                </>
+              )}
+              {modal === 'milestone' && !draft.id && (
+                <p className='form-note'>You can add a milestone photo after you save it.</p>
               )}
               {modal === 'task' && (
                 <>
@@ -3485,7 +3909,9 @@ export default function Workspace({
                     ? 'Sending…'
                     : 'Saving…'
                   : modal === 'project'
-                    ? 'Create project'
+                    ? draft.id
+                      ? 'Save project'
+                      : 'Create project'
                     : modal === 'member'
                       ? 'Add and send invite'
                       : 'Save changes'}
@@ -3843,14 +4269,49 @@ export default function Workspace({
           )}
         </DialogContent>
       </Dialog>
+      <input
+        ref={projectPhotoInputRef}
+        type='file'
+        accept='image/jpeg,image/png,image/webp,image/gif'
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          const projectId =
+            modal === 'project' && draft.id ? draft.id : project.id;
+          if (file && projectId) beginPhotoCrop(file, 'project', { projectId });
+        }}
+      />
+      <input
+        ref={milestonePhotoInputRef}
+        type='file'
+        accept='image/jpeg,image/png,image/webp,image/gif'
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && project.id && draft.id && modal === 'milestone')
+            beginPhotoCrop(file, 'milestone', {
+              projectId: project.id,
+              milestoneId: draft.id,
+            });
+        }}
+      />
       <AvatarCropDialog
-        open={!!avatarCropUrl}
-        imageUrl={avatarCropUrl}
+        open={!!photoCrop}
+        imageUrl={photoCrop?.url || ''}
         busy={avatarBusy}
-        onCancel={closeAvatarCrop}
+        onCancel={closePhotoCrop}
         onConfirm={async (file) => {
-          await uploadProfilePhoto(file);
-          closeAvatarCrop();
+          if (!photoCrop) return;
+          if (photoCrop.kind === 'avatar') await uploadProfilePhoto(file);
+          else if (photoCrop.kind === 'project' && photoCrop.projectId)
+            await uploadProjectPhoto(file, photoCrop.projectId);
+          else if (
+            photoCrop.kind === 'milestone' &&
+            photoCrop.projectId &&
+            photoCrop.milestoneId
+          )
+            await uploadMilestonePhoto(file, photoCrop.projectId, photoCrop.milestoneId);
+          closePhotoCrop();
         }}
       />
       <Toaster position='top-center' richColors closeButton />

@@ -14,6 +14,9 @@ export type Milestone = {
   description?: string;
   due: string;
   done: boolean;
+  photoUrl?: string;
+  /** Server-side R2 key; preserved across workspace saves. */
+  photoKey?: string;
 };
 export type Project = {
   id: string;
@@ -29,6 +32,8 @@ export type Project = {
   version: number;
   owner?: string;
   groupId?: string;
+  photoUrl?: string;
+  photoKey?: string;
 };
 export const future = (days: number) => {
   const d = new Date();

@@ -1,5 +1,6 @@
 import type { Project } from './model';
 import { avatarUrlFor } from './avatar';
+import { milestonePhotoUrlFor, projectPhotoUrlFor } from './project-media';
 export type Actor = { userId: string; authUserId: string; email: string; displayName: string };
 export const userKey = (email: string) => 'user:' + email.trim().toLowerCase();
 const scoped = (project: string, id: string) =>
@@ -287,8 +288,16 @@ export function replaceRows(
   for (const m of p.milestones)
     out.push(
       q(
-        `INSERT INTO milestones(id,project_id,title,description,due_date,status) SELECT ?,?,?,?,?,? WHERE ${guard}`,
-        [m.id, p.id, m.title, m.description || '', m.due, m.done ? 'done' : 'todo'],
+        `INSERT INTO milestones(id,project_id,title,description,due_date,status,photo_key) SELECT ?,?,?,?,?,?,? WHERE ${guard}`,
+        [
+          m.id,
+          p.id,
+          m.title,
+          m.description || '',
+          m.due,
+          m.done ? 'done' : 'todo',
+          m.photoKey || null,
+        ],
       ),
     );
   for (const t of p.tasks)
@@ -359,6 +368,9 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
     version: r.version,
     groupId: r.group_id,
     reminderHours: r.reminder_hours,
+    ...(r.photo_key
+      ? { photoKey: r.photo_key, photoUrl: projectPhotoUrlFor(id, r.photo_key) }
+      : {}),
     members: (results[0].results as any[]).map((m) => ({
       id: m.id,
       name: m.name,
@@ -380,6 +392,12 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
       description: m.description,
       due: m.due_date,
       done: m.status === 'done',
+      ...(m.photo_key
+        ? {
+            photoKey: m.photo_key,
+            photoUrl: milestonePhotoUrlFor(id, m.id, m.photo_key),
+          }
+        : {}),
     })),
     availability: slots,
   };

@@ -349,6 +349,27 @@ h3 {
   gap: 25px;
   margin-bottom: 24px;
 }
+.project-banner-main {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  min-width: 0;
+}
+.project-banner-photo {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #cfcaf5;
+  border: 2px solid white;
+}
+.project-banner-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
 .project-banner h2 {
   font-size: 23px;
   margin-top: 9px;
@@ -561,6 +582,38 @@ h3 {
   gap: 14px;
   padding: 0 22px 23px;
   position: relative;
+  align-items: flex-start;
+}
+.milestone-copy {
+  flex: 1;
+  min-width: 0;
+}
+.milestone-photo {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: #eceaf8;
+  border: 1px solid #e0ddf7;
+}
+.milestone-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.milestone-row-menu {
+  margin-left: auto;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.milestone-row-menu:hover {
+  background: #f4f2fe;
 }
 .overview-milestones-panel .panel-heading + .milestone {
   padding-top: 18px;
@@ -1317,22 +1370,94 @@ button.member-row-button:focus-visible {
 .file-row svg {
   color: #8b7dd0;
 }
-.project-option {
-  display: block;
-  text-align: left;
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 8px;
+.project-option-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin: 3px 0;
+  border-radius: 8px;
+}
+.project-option-row.active {
+  background: #efedff;
+}
+.project-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 8px 10px 12px;
+  border-radius: 8px;
   font-size: 14px;
   color: #7c8394;
+}
+.project-option-row.active .project-option {
+  color: #6054bf;
+}
+.project-option-name {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.project-option.active {
-  background: #efedff;
-  color: #6054bf;
+.project-option-thumb,
+.project-option-glyph {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #e8e6f8;
+}
+.project-option-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.project-option-menu {
+  padding: 6px;
+  border: 0;
+  background: transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.project-option-menu:hover {
+  background: #e7e4fb;
+}
+.project-settings-photo {
+  width: 72px;
+  height: 72px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #eceaf8;
+  border: 1px solid #e0ddf7;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #969eac;
+  font-size: 12px;
+}
+.project-settings-photo.empty {
+  background: #f7f6fb;
+}
+.project-settings-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.project-settings-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
 }
 .team-note {
   border: 1px solid #e8e5f5;
@@ -1986,12 +2111,16 @@ button.member-row-button:focus-visible {
 .workspace-sidebar-content > * {
   flex-shrink: 0;
 }
+.workspace-sidebar-content .project-option-row {
+  min-height: 44px;
+  margin: 0;
+  flex-shrink: 0;
+}
 .workspace-sidebar-content .project-option {
   min-height: 44px;
   line-height: 20px;
-  padding: 12px;
+  padding: 12px 8px 12px 12px;
   margin: 0;
-  flex-shrink: 0;
 }
 .workspace-sidebar-content > .sidebar-label {
   margin-top: 12px;
