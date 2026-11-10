@@ -11,6 +11,7 @@
  */
 
 import { FormEvent, useState } from 'react';
+import AuthPasswordField from '../auth-password-field';
 import {
   DEFAULT_AFTER_AUTH_PATH,
   readReturnToParam,
@@ -131,33 +132,27 @@ export default function SignUpPage() {
             />
           </label>
 
-          <label>
-            Password
-            <input
-              type='password'
-              name='password'
-              autoComplete='new-password'
-              required
-              minLength={8}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder='At least 8 characters'
-            />
-          </label>
+          <AuthPasswordField
+            label='Password'
+            name='password'
+            autoComplete='new-password'
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder='At least 8 characters'
+          />
 
-          <label>
-            Confirm password
-            <input
-              type='password'
-              name='confirmPassword'
-              autoComplete='new-password'
-              required
-              minLength={8}
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder='Re-enter password'
-            />
-          </label>
+          <AuthPasswordField
+            label='Confirm password'
+            name='confirmPassword'
+            autoComplete='new-password'
+            required
+            minLength={8}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder='Re-enter password'
+          />
 
           {error ? (
             <p className='auth-error' role='alert'>

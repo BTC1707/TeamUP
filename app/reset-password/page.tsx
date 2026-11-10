@@ -5,6 +5,7 @@
  */
 
 import { FormEvent, useEffect, useState } from 'react';
+import AuthPasswordField from '../auth-password-field';
 import { resetAccountPassword } from '../../lib/auth-client';
 
 export default function ResetPasswordPage() {
@@ -64,33 +65,27 @@ export default function ResetPasswordPage() {
         ) : (
           <>
             <form className='auth-form' onSubmit={handleSubmit}>
-              <label>
-                New password
-                <input
-                  type='password'
-                  name='password'
-                  autoComplete='new-password'
-                  required
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder='At least 8 characters'
-                />
-              </label>
+              <AuthPasswordField
+                label='New password'
+                name='password'
+                autoComplete='new-password'
+                required
+                minLength={8}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder='At least 8 characters'
+              />
 
-              <label>
-                Confirm password
-                <input
-                  type='password'
-                  name='confirmPassword'
-                  autoComplete='new-password'
-                  required
-                  minLength={8}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  placeholder='Repeat your password'
-                />
-              </label>
+              <AuthPasswordField
+                label='Confirm password'
+                name='confirmPassword'
+                autoComplete='new-password'
+                required
+                minLength={8}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder='Repeat your password'
+              />
 
               {error ? (
                 <p className='auth-error' role='alert'>
