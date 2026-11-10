@@ -175,12 +175,12 @@ function PersonAvatar({
           {face}
         </button>
       </PopoverTrigger>
-      <PopoverContent align='center' className='person-card w-[260px] max-w-[min(260px,calc(100vw-24px))]'>
+      <PopoverContent align='center' className='person-card w-[300px] max-w-[min(300px,calc(100vw-24px))]'>
         <div className='person-card-body'>
           <AvatarFace name={name} avatarUrl={avatarUrl} className='avatar avatar-lg' />
           <div className='person-card-meta'>
-            <strong>{name}</strong>
-            {email ? <small>{email}</small> : null}
+            <strong title={name}>{name}</strong>
+            {email ? <small title={email}>{email}</small> : null}
           </div>
         </div>
       </PopoverContent>
