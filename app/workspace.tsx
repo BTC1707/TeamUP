@@ -428,9 +428,6 @@ export default function Workspace({
   const [draft, setDraft] = useState<any>({});
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
-  const [emailReady, setEmailReady] = useState(false);
-  const [pushSettings, setPushSettings] = useState({ enabled: false, publicKey: '', subscribed: false });
-  const [pushBusy, setPushBusy] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [plan, setPlan] = useState<SuggestedPlan | null>(null);
@@ -688,52 +685,6 @@ export default function Workspace({
     if (!r.ok) throw new Error(data.error || 'Something went wrong. Please try again.');
     return data;
   }
-  async function changePushSubscription() {
-    setPushBusy(true);
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window))
-        throw new Error('This browser does not support push notifications.');
-      const registration = await navigator.serviceWorker.register('/sw.js');
-      const existing = await registration.pushManager.getSubscription();
-      if (existing && pushSettings.subscribed) {
-        await api('/api/push', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'unsubscribe', endpoint: existing.endpoint }),
-        });
-        await existing.unsubscribe();
-        setPushSettings((current) => ({ ...current, subscribed: false }));
-        toast.success('Push notifications turned off on this device.');
-        return;
-      }
-      if (!pushSettings.enabled || !pushSettings.publicKey)
-        throw new Error('Push delivery is not configured for this deployment yet.');
-      const permission =
-        Notification.permission === 'default'
-          ? await Notification.requestPermission()
-          : Notification.permission;
-      if (permission !== 'granted') throw new Error('Allow notifications in your browser to enable nudges.');
-      const normalizedKey = pushSettings.publicKey.replace(/-/g, '+').replace(/_/g, '/');
-      const paddedKey = normalizedKey.padEnd(Math.ceil(normalizedKey.length / 4) * 4, '=');
-      const applicationServerKey = Uint8Array.from(atob(paddedKey), (character) => character.charCodeAt(0));
-      const subscription = existing ||
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey,
-        }));
-      await api('/api/push', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'subscribe', subscription: subscription.toJSON() }),
-      });
-      setPushSettings((current) => ({ ...current, subscribed: true }));
-      toast.success('Push notifications enabled on this device.');
-    } catch (error) {
-      toast.error((error as Error).message || 'Could not update push notifications.');
-    } finally {
-      setPushBusy(false);
-    }
-  }
   async function loadNotifications() {
     if (localOnly || demoMode) return;
     try {
@@ -768,6 +719,29 @@ export default function Workspace({
       );
     } catch (error) {
       toast.error((error as Error).message || 'Could not update notifications.');
+    }
+  }
+
+  async function respondToInvite(note: AppNotification, decision: 'accept' | 'reject') {
+    const inviteId = note.meta.inviteId;
+    if (!inviteId) return;
+    try {
+      await api('/api/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'respond', inviteId, decision }),
+      });
+      setNotifications((current) =>
+        current.map((item) =>
+          item.id === note.id
+            ? { ...item, read: true, meta: { ...item.meta, state: decision === 'accept' ? 'accepted' : 'rejected' } }
+            : item,
+        ),
+      );
+      toast.success(decision === 'accept' ? 'You joined the project.' : 'Invite declined.');
+      if (decision === 'accept') await load();
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not update that invite.');
     }
   }
 
@@ -1048,7 +1022,6 @@ export default function Workspace({
       setUser(data.user);
       setProjects(data.projects);
       setAiReady(data.aiReady);
-      setEmailReady(!!data.emailReady);
       setCanConfigureAI(data.canConfigureAI);
       offerTutorialIfNeeded(!!data.user.tutorialSeen);
       const selectedProject =
@@ -1100,7 +1073,6 @@ export default function Workspace({
             });
             setProjects(data.projects || []);
             setAiReady(!!data.aiReady);
-            setEmailReady(!!data.emailReady);
             setCanConfigureAI(!!data.canConfigureAI);
             offerTutorialIfNeeded(!!data.user.tutorialSeen);
             const selectedProject =
@@ -1157,24 +1129,6 @@ export default function Workspace({
     const timer = window.setInterval(() => void loadNotifications(), 45000);
     return () => window.clearInterval(timer);
   }, [localOnly, demoMode, user?.id]);
-  useEffect(() => {
-    if (!user?.id || localOnly || demoMode) return;
-    let active = true;
-    fetch('/api/push')
-      .then(async (response) => {
-        const data: any = await response.json();
-        if (active && response.ok)
-          setPushSettings({
-            enabled: !!data.enabled,
-            publicKey: data.publicKey || '',
-            subscribed: !!data.subscribed,
-          });
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [user?.id, localOnly, demoMode]);
   useEffect(() => {
     const context = (document as any).modelContext;
     if (!context?.registerTool) return;
@@ -1953,7 +1907,6 @@ export default function Workspace({
         });
       }
     }
-    let memberInviteHandled = false;
     if (modal === 'member') {
       if (project.members.some((m) => m.email.toLowerCase() === draft.email.toLowerCase())) {
         setError('This email is already on the team.');
@@ -1967,25 +1920,6 @@ export default function Workspace({
           { id: uid(), name: draft.name, email: memberEmail },
         ],
       });
-      if (ok && emailReady && !localOnly) {
-        memberInviteHandled = true;
-        try {
-          await api('/api/invites', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'send',
-              project: project.id,
-              email: memberEmail,
-            }),
-          });
-          toast.success('Teammate added and invitation emailed.');
-        } catch (err) {
-          toast.message('Teammate added, but the invitation email could not be sent.', {
-            description: (err as Error).message,
-          });
-        }
-      }
     }
     if (modal === 'rename-file') {
       const nextName =
@@ -2054,7 +1988,7 @@ export default function Workspace({
     }
     if (ok) {
       setModal('');
-      if (!memberInviteHandled) toast.success('Saved to your workspace.');
+      toast.success('Saved to your workspace.');
     }
   }
   const taskRows = (tasks: Task[]) =>
@@ -2354,13 +2288,16 @@ export default function Workspace({
                   {!notifications.length ? (
                     <p className='notification-empty'>No updates yet.</p>
                   ) : (
-                    notifications.map((n) => (
-                      <button
-                        type='button'
+                    notifications.map((n) => {
+                      const pendingInvite =
+                        n.type === 'project_invite' && n.meta.inviteId && n.meta.state !== 'accepted' && n.meta.state !== 'rejected';
+                      return (
+                      <div
                         key={n.id}
                         className={`notification-item${n.read ? '' : ' unread'}`}
                         onClick={() => {
                           if (!n.read) void markNotifications('read', [n.id]);
+                          if (pendingInvite) return;
                           if (n.projectId && n.projectId !== project.id) {
                             const target = projects.find((p) => p.id === n.projectId);
                             if (target) selectProject(target);
@@ -2378,8 +2315,33 @@ export default function Workspace({
                             minute: '2-digit',
                           })}
                         </span>
-                      </button>
-                    ))
+                        {pendingInvite ? (
+                          <span className='notification-actions'>
+                            <button
+                              type='button'
+                              className='btn primary'
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void respondToInvite(n, 'accept');
+                              }}
+                            >
+                              Accept
+                            </button>
+                            <button
+                              type='button'
+                              className='btn subtle'
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void respondToInvite(n, 'reject');
+                              }}
+                            >
+                              Decline
+                            </button>
+                          </span>
+                        ) : null}
+                      </div>
+                      );
+                    })
                   )}
                 </div>
                 <div className='notification-popover-foot'>
@@ -2542,8 +2504,8 @@ export default function Workspace({
                   } else if (view === 'Milestones' && requireProject())
                     open('milestone', { due: project.due });
                   else if (view === 'Team' && requireProject()) {
-                    if (isOwner) open('member');
-                    else toast.info('The project creator can add team members.');
+                    if (isOwner) document.getElementById('invite-search')?.focus();
+                    else toast.info('The project creator can invite teammates.');
                   } else if (requireProject()) open('task', { due: future(1), status: 'todo' });
                 }}
               >
@@ -2552,8 +2514,8 @@ export default function Workspace({
                   ? 'AI planner'
                   : view === 'Milestones'
                     ? 'Add milestone'
-                    : view === 'Team'
-                      ? 'Add member'
+                      : view === 'Team'
+                        ? 'Invite'
                       : view === 'Overview' && isDemo && !loading
                         ? 'Create project'
                         : 'Add task'}
@@ -3351,12 +3313,13 @@ export default function Workspace({
           {!isDemo && view === 'Team' && (
             <>
               <div className='notice flex flex-wrap items-center justify-between gap-3'>
-                <span>Manage your teammates here. Share this project from Project settings.</span>
+                <span>Manage your teammates here. Invites show up in their notifications.</span>
                 <button className='btn demo-banner-action' onClick={() => setView('Project settings')}>
                   <Settings size={16} />
                   Project settings
                 </button>
               </div>
+              {isOwner && !localOnly ? <InviteLink key={project.id} project={project.id} /> : null}
               <section className='panel team-list-panel'>
                 <div className='panel-heading'>
                   <h2>Your project team</h2>
@@ -3478,7 +3441,7 @@ export default function Workspace({
                     real invitations.
                   </div>
                 ) : isOwner ? (
-                  <InviteLink key={project.id} project={project.id} emailReady={emailReady} />
+                  <InviteLink key={project.id} project={project.id} />
                 ) : (
                   <div className='notice'>
                     Ask the project owner to create an invitation link for new teammates.
@@ -3774,36 +3737,6 @@ export default function Workspace({
                   <p className='form-note'>
                     Language preference is saved; the interface is currently available in English.
                   </p>
-                  <label className='flex gap-2 items-center'>
-                    <input
-                      type='checkbox'
-                      checked={draft.notifications !== false}
-                      onChange={(e) => setDraft({ ...draft, notifications: e.target.checked })}
-                    />
-                    Allow teammate nudges
-                  </label>
-                  <p className='form-note'>
-                    When enabled, teammates can send you in-app nudges in TeamUP.
-                  </p>
-                  <div className='push-controls'>
-                    <p className='form-note'>
-                      {pushSettings.enabled
-                        ? 'Browser push is configured for this deployment, but teammate nudges are in-app only for now.'
-                        : 'Browser push is waiting for this deployment’s VAPID keys to be configured.'}
-                    </p>
-                    <button
-                      type='button'
-                      className='btn subtle'
-                      disabled={pushBusy || (!pushSettings.enabled && !pushSettings.subscribed)}
-                      onClick={changePushSubscription}
-                    >
-                      {pushBusy
-                        ? 'Updating…'
-                        : pushSettings.subscribed
-                          ? 'Turn off push on this device'
-                          : 'Enable push on this device'}
-                    </button>
-                  </div>
                 </>
               )}
               {modal === 'project' && (
@@ -4061,19 +3994,16 @@ export default function Workspace({
                     />
                   </label>
                   <p className='form-note'>
-                    Use the email they sign in with.
-                    {emailReady && !localOnly
-                      ? ' We’ll email them a project invitation link after you add them.'
-                      : ' Share an invite link from Project settings if email isn’t connected yet.'}
+                    This adds them to the roster. To let them join the project, search their email
+                    or username and send an invite they can accept.
                   </p>
                 </>
               )}
               {modal === 'reminders' && (
                 <>
                   <div className='notice'>
-                    {emailReady
-                      ? 'Deadline reminder emails aren’t automated yet. Save your preference now; you can still nudge teammates in-app from the Team page.'
-                      : 'Email delivery isn’t connected yet. Save your preference now; deadlines remain visible in your workspace.'}
+                    Save when you want a reminder before a deadline. Deadlines stay visible in the
+                    workspace, and you can still nudge teammates from the Team page.
                   </div>
                   <label>
                     Remind me before a deadline
@@ -4106,7 +4036,7 @@ export default function Workspace({
                       ? 'Save project'
                       : 'Create project'
                     : modal === 'member'
-                      ? 'Add and send invite'
+                      ? 'Add teammate'
                       : 'Save changes'}
               </button>
               {modal === 'profile' && canConfigureAI && (
@@ -4219,7 +4149,7 @@ export default function Workspace({
                       </button>
                     )}
                   </div>
-                  <p className='form-note'>Sends an in-app notification. Email and push are paused for now.</p>
+                  <p className='form-note'>Shows up in their TeamUP notifications.</p>
                 </div>
               )}
               <h3 className='teammate-tasks-heading'>

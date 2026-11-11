@@ -1259,20 +1259,6 @@ button.member-row-button:focus-visible {
   gap: 8px;
   justify-content: flex-end;
 }
-.push-controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
-  border: 1px solid #e5e4f1;
-  border-radius: 10px;
-  background: #faf9ff;
-}
-.push-controls .form-note {
-  margin: 0;
-}
 .schedule .day {
   display: flex;
   flex-direction: column;
@@ -1719,6 +1705,41 @@ button.member-row-button:focus-visible {
 .notification-item-time {
   font-size: 11px;
   color: #969eac;
+}
+.notification-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.notification-actions .btn {
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.invite-results {
+  display: grid;
+  gap: 8px;
+}
+.invite-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e6e3f4;
+  border-radius: 10px;
+  background: #fff;
+}
+.invite-result small {
+  color: #667085;
+}
+.invite-link-fallback {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid #eee;
 }
 .mobile-title {
   display: none;
@@ -2184,6 +2205,21 @@ button.member-row-button:focus-visible {
   font-size: 14px;
   color: #69758b;
   line-height: 1.5;
+}
+.invite-panel label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.invite-panel input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d8dce8;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 450;
 }
 .invite-url {
   display: flex;

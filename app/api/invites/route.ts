@@ -5,6 +5,9 @@ import {
   acceptInvite,
   revokeInvite,
   sendInviteEmail,
+  searchInvitees,
+  inviteMember,
+  respondToMemberInvite,
 } from '@/lib/invites';
 import { EmailError, emailConfigured } from '@/lib/email';
 
@@ -30,6 +33,22 @@ export async function POST(req: Request) {
     switch (b.action) {
       case 'create':
         result = await createInvite(db, String(b.project || ''), u);
+        break;
+      case 'search':
+        result = {
+          people: await searchInvitees(db, String(b.project || ''), u, String(b.query || '')),
+        };
+        break;
+      case 'invite':
+        result = await inviteMember(db, String(b.project || ''), u, String(b.userId || ''));
+        break;
+      case 'respond':
+        result = await respondToMemberInvite(
+          db,
+          u,
+          String(b.inviteId || ''),
+          b.decision === 'reject' ? 'reject' : 'accept',
+        );
         break;
       case 'send': {
         const origin = new URL(req.url).origin;
@@ -79,6 +98,17 @@ export async function POST(req: Request) {
       return Response.json({ error: 'Enter a valid email address.' }, { status: 400 });
     if (e instanceof Error && e.message === 'EMAIL_SELF')
       return Response.json({ error: 'Send the invite to a teammate’s email, not your own.' }, { status: 400 });
+    if (e instanceof Error && e.message === 'INVITE_USER')
+      return Response.json({ error: 'Choose a TeamUP account to invite.' }, { status: 400 });
+    if (e instanceof Error && e.message === 'INVITE_MEMBER')
+      return Response.json({ error: 'That person is already on this project.' }, { status: 409 });
+    if (e instanceof Error && e.message === 'INVITE_PENDING')
+      return Response.json({ error: 'They already have a pending invite.' }, { status: 409 });
+    if (e instanceof Error && /no such table: project_member_invites/i.test(e.message))
+      return Response.json(
+        { error: 'Invites need a database update before they can be sent. Apply the latest migration, then try again.' },
+        { status: 503 },
+      );
     if (e instanceof Error && e.message.startsWith('INVITE_'))
       return Response.json(
         {

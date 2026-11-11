@@ -58,20 +58,6 @@ export const settings = sqliteTable('settings', {
   timeZone: text('time_zone').notNull().default('UTC'),
   notifications: integer('notifications', { mode: 'boolean' }).notNull().default(true),
 });
-export const pushSubscriptions = sqliteTable(
-  'push_subscriptions',
-  {
-    id: text('id').primaryKey(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id),
-    endpoint: text('endpoint').notNull(),
-    p256dh: text('p256dh').notNull(),
-    authSecret: text('auth_secret').notNull(),
-    createdAt: text('created_at').notNull(),
-  },
-  (t) => [uniqueIndex('push_subscription_user_endpoint').on(t.userId, t.endpoint)],
-);
 // data is retained as a read-only legacy migration backup, never used for normalized saves.
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
@@ -222,6 +208,24 @@ export const aiConfig = sqliteTable('ai_config', {
   sealedKey: text('sealed_key').notNull(),
   updated: text('updated').notNull(),
 });
+export const projectMemberInvites = sqliteTable(
+  'project_member_invites',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id),
+    inviterId: text('inviter_id')
+      .notNull()
+      .references(() => users.id),
+    inviteeId: text('invitee_id')
+      .notNull()
+      .references(() => users.id),
+    status: text('status').notNull().default('pending'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('member_invite_project_user').on(t.projectId, t.inviteeId)],
+);
 export const projectInvites = sqliteTable(
   'project_invites',
   {

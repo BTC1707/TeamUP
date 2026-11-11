@@ -1,6 +1,11 @@
 import type { Project } from '@/lib/model';
 
-export type NotificationType = 'nudge' | 'task_created' | 'task_completed';
+export type NotificationType =
+  | 'nudge'
+  | 'task_created'
+  | 'task_completed'
+  | 'project_invite'
+  | 'invite_response';
 
 export type AppNotification = {
   id: string;

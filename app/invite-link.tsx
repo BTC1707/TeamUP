@@ -1,42 +1,45 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
-export default function InviteLink({
-  project,
-  emailReady: emailReadyProp,
-}: {
-  project: string;
-  emailReady?: boolean;
-}) {
+type Person = {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  avatarUrl?: string;
+};
+
+export default function InviteLink({ project }: { project: string }) {
+  const [query, setQuery] = useState('');
+  const [people, setPeople] = useState<Person[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [invitingId, setInvitingId] = useState('');
   const [url, setUrl] = useState('');
   const [expires, setExpires] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
   const [error, setError] = useState('');
-  const [email, setEmail] = useState('');
-  const [emailReady, setEmailReady] = useState(!!emailReadyProp);
 
   async function request(action: string, extra: Record<string, string> = {}) {
-    const r = await fetch('/api/invites', {
+    const response = await fetch('/api/invites', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, project, ...extra }),
     });
-    const d: any = await r.json();
-    if (!r.ok) throw new Error(d.error);
-    return d;
+    const data: any = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not update invites.');
+    return data;
   }
 
   useEffect(() => {
     let active = true;
     request('status')
-      .then((d) => {
-        if (!active) return;
-        setExpires(d.expiresAt);
-        if (typeof d.emailReady === 'boolean') setEmailReady(d.emailReady);
+      .then((data) => {
+        if (active) setExpires(data.expiresAt);
       })
-      .catch((e) => {
-        if (active) setError(e.message);
+      .catch(() => {
+        // A missing link is fine; creating one still works.
       });
     return () => {
       active = false;
@@ -44,37 +47,60 @@ export default function InviteLink({
   }, [project]);
 
   useEffect(() => {
-    if (typeof emailReadyProp === 'boolean') setEmailReady(emailReadyProp);
-  }, [emailReadyProp]);
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setPeople([]);
+      setSearching(false);
+      return;
+    }
+    let active = true;
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      request('search', { query: trimmed })
+        .then((data) => {
+          if (active) setPeople(Array.isArray(data.people) ? data.people : []);
+        })
+        .catch((searchError) => {
+          if (active) setError((searchError as Error).message);
+        })
+        .finally(() => {
+          if (active) setSearching(false);
+        });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [project, query]);
 
-  async function create() {
-    setBusy(true);
+  async function invite(person: Person) {
+    setInvitingId(person.id);
     setError('');
     try {
-      const d = await request('create');
-      setUrl(window.location.origin + '/join#' + d.token);
-      setExpires(d.expiresAt);
-    } catch (e) {
-      setError((e as Error).message);
+      await request('invite', { userId: person.id });
+      setPeople((current) => current.filter((entry) => entry.id !== person.id));
+      setQuery('');
+      toast.success(`Invite sent to ${person.name}.`);
+    } catch (inviteError) {
+      const message = (inviteError as Error).message;
+      setError(message);
+      toast.error(message);
     } finally {
-      setBusy(false);
+      setInvitingId('');
     }
   }
 
-  async function sendEmailInvite() {
-    setBusy(true);
+  async function create() {
+    setLinkBusy(true);
     setError('');
     try {
-      const d = await request('send', { email: email.trim() });
-      setUrl(window.location.origin + '/join#' + d.token);
-      setExpires(d.expiresAt);
-      setEmail('');
-      toast.success('Invitation email sent.');
-    } catch (e) {
-      setError((e as Error).message);
-      toast.error((e as Error).message);
+      const data = await request('create');
+      setUrl(`${window.location.origin}/join#${data.token}`);
+      setExpires(data.expiresAt);
+    } catch (createError) {
+      setError((createError as Error).message);
     } finally {
-      setBusy(false);
+      setLinkBusy(false);
     }
   }
 
@@ -83,94 +109,110 @@ export default function InviteLink({
       <div>
         <h2>Invite teammates</h2>
         <p className='subtext'>
-          Anyone with this link can sign in and join this project. Share it only with your
-          teammates.
+          Search by email or username. They get a notification and can accept or decline.
         </p>
       </div>
-      {error && <p className='error'>{error}</p>}
-      {!emailReady && (
-        <div className='notice'>
-          Email delivery isn’t connected yet. You can still copy an invite link. Ask the site owner
-          to add Resend (<code>RESEND_API_KEY</code> + <code>EMAIL_FROM</code>).
+      {error ? <p className='error'>{error}</p> : null}
+      <label>
+        Find a teammate
+        <input
+          id='invite-search'
+          value={query}
+          maxLength={80}
+          placeholder='Email or username'
+          autoComplete='off'
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      {query.trim().length >= 2 ? (
+        <div className='invite-results'>
+          {searching ? <p className='form-note'>Searching…</p> : null}
+          {!searching && people.length === 0 ? (
+            <p className='form-note'>No TeamUP account matches that email or username.</p>
+          ) : null}
+          {people.map((person) => (
+            <div className='invite-result' key={person.id}>
+              <div>
+                <strong>{person.name}</strong>
+                <small className='block'>
+                  {person.username ? `@${person.username} · ` : ''}
+                  {person.email}
+                </small>
+              </div>
+              <button
+                type='button'
+                className='btn primary'
+                disabled={invitingId === person.id}
+                onClick={() => void invite(person)}
+              >
+                {invitingId === person.id ? 'Inviting…' : 'Invite'}
+              </button>
+            </div>
+          ))}
         </div>
+      ) : (
+        <p className='form-note'>Type at least 2 characters.</p>
       )}
-      {emailReady && (
-        <label>
-          Email an invitation
-          <div className='invite-email-row'>
-            <input
-              type='email'
-              value={email}
-              maxLength={254}
-              placeholder='teammate@school.edu'
-              disabled={busy}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+
+      <div className='invite-link-fallback'>
+        <p className='form-note'>Or share a link. Anyone with the link can sign in and join.</p>
+        {url ? (
+          <label className='invite-url'>
+            Invitation link
+            <input readOnly value={url} onFocus={(event) => event.target.select()} />
+          </label>
+        ) : null}
+        <div className='flex flex-wrap gap-3'>
+          {url ? (
             <button
               className='btn primary'
               type='button'
-              disabled={busy || !email.trim()}
-              onClick={() => void sendEmailInvite()}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(url);
+                  toast.success('Invitation link copied.');
+                } catch {
+                  setError('Select the link above and copy it manually.');
+                }
+              }}
             >
-              {busy ? 'Sending…' : 'Send invite email'}
+              Copy invite link
             </button>
-          </div>
-        </label>
-      )}
-      {url && (
-        <label className='invite-url'>
-          Invitation link
-          <input readOnly value={url} onFocus={(e) => e.target.select()} />
-        </label>
-      )}
-      <div className='flex flex-wrap gap-3'>
-        {url && (
-          <button
-            className='btn primary'
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(url);
-                toast.success('Invitation link copied.');
-              } catch {
-                setError('Select the link above and copy it manually.');
-              }
-            }}
-          >
-            Copy invite link
+          ) : null}
+          <button className='btn' type='button' disabled={linkBusy} onClick={() => void create()}>
+            {linkBusy ? 'Creating…' : expires ? 'Replace invite link' : 'Create invite link'}
           </button>
-        )}
-        <button className='btn' disabled={busy} onClick={create}>
-          {busy ? 'Updating…' : expires ? 'Replace invite link' : 'Create invite link'}
-        </button>
-        {expires && (
-          <button
-            className='btn subtle'
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await request('revoke');
-                setUrl('');
-                setExpires(null);
-                setError('');
-                toast.success('Invitation link revoked.');
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Revoke link
-          </button>
-        )}
+          {expires ? (
+            <button
+              className='btn subtle'
+              type='button'
+              disabled={linkBusy}
+              onClick={async () => {
+                setLinkBusy(true);
+                try {
+                  await request('revoke');
+                  setUrl('');
+                  setExpires(null);
+                  setError('');
+                  toast.success('Invitation link revoked.');
+                } catch (revokeError) {
+                  setError((revokeError as Error).message);
+                } finally {
+                  setLinkBusy(false);
+                }
+              }}
+            >
+              Revoke link
+            </button>
+          ) : null}
+        </div>
+        {expires ? (
+          <small>
+            Expires {new Date(expires).toLocaleString()}. Replacing the link disables the previous
+            one. Revoking a link does not remove teammates who already joined.
+          </small>
+        ) : null}
       </div>
-      {expires && (
-        <small>
-          Expires {new Date(expires).toLocaleString()}. Replacing or emailing a new invite disables
-          the previous link. Revoking a link does not remove teammates who already joined.
-        </small>
-      )}
     </section>
   );
 }

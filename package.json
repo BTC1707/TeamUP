@@ -14,13 +14,11 @@
     "db:generate": "drizzle-kit generate",
     "test:database": "node tests/relational-store.mjs",
     "cf:setup": "node scripts/cf-setup.mjs",
-    "push:keys": "node scripts/generate-vapid.mjs",
     "cf:migrate": "node scripts/cf-migrate.mjs",
     "cf:deploy": "node scripts/cf-deploy.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
-    "@block65/webcrypto-web-push": "^2.0.0",
     "@hookform/resolvers": "^5.7.1",
     "@shadcn/react": "^0.3.0",
     "class-variance-authority": "0.7.1",

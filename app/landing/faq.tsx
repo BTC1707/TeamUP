@@ -13,12 +13,12 @@ const questions = [
   {
     question: 'How do teammates join a project?',
     answer:
-      'The project owner can email an invitation link from Project settings or add a teammate by email. Teammates should sign in with the same email address they were invited with.',
+      'The project owner can search for a teammate by email or username and send an invite. It shows up in their notifications, where they can accept or decline.',
   },
   {
-    question: 'Does TeamUP send reminders or push notifications?',
+    question: 'Does TeamUP send reminders?',
     answer:
-      'Yes. Teammates can get invitation emails, in-app updates, and in-app nudges from the Team page so everyone stays in the loop.',
+      'Teammates can get invitation emails, in-app updates, and nudges from the Team page.',
   },
 ];
 

@@ -135,10 +135,9 @@ After the PR is reviewed and **merged to `main`**:
 
 ### 6. Collaborate on a shared project (live site)
 
-1. Open the live URL and sign in with name + email
-2. Create a project, or ask a teammate for an **invite link** (Project settings)
-3. Open the invite link → sign in → accept
-4. Work together on tasks, milestones, files, availability, etc.
+1. Open the live URL and sign in
+2. Create a project, or accept a teammate’s invite from your notifications
+3. Work together on tasks, milestones, files, availability, etc.
 
 Demo mode (no account): open `/demo` on the live site.
 
@@ -162,9 +161,9 @@ git push -u origin HEAD  # then open a PR
 - Use the **same email** teammates invite you with
 - Live-site data persists in Cloudflare D1 (refresh won’t wipe it)
 
-## Email invites and nudges (Resend)
+## Password reset email (Resend)
 
-TeamUP can email project invitation links and teammate nudges through [Resend](https://resend.com) (free tier is enough for class projects). Create an API key, verify a sending domain (or use `onboarding@resend.dev` for self-tests), then set:
+Project invites and nudges stay inside TeamUP. Password reset can email a link through [Resend](https://resend.com). Create an API key, verify a sending domain (or use `onboarding@resend.dev` for self-tests), then set:
 
 ```text
 RESEND_API_KEY=<your key>
@@ -178,21 +177,7 @@ npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put EMAIL_FROM
 ```
 
-Owners can **Send invite email** from Project settings, or add a teammate by email (an invite is emailed automatically when Resend is configured). **Nudge** on the Team page tries browser push and email; it succeeds if either channel delivers.
-
-## Browser push nudges
-
-Team members can enable push notifications in their account settings, then use **Nudge** next to a teammate on the Team page. Push subscriptions are stored per user and device in D1. A VAPID keypair is required for each deployment before browser subscriptions can be created.
-
-Generate a keypair once with `npm run push:keys`. Keep the public key stable after users have subscribed. For local development, put the three printed values in the ignored `.dev.vars` file. For production, add them as Worker secrets in the Cloudflare account:
-
-```text
-VAPID_SERVER_PUBLIC_KEY=<printed public key>
-VAPID_SERVER_PRIVATE_KEY=<printed private key>
-VAPID_SUBJECT=https://teamup.landonpack7-teamup.workers.dev
-```
-
-Use `npx wrangler secret put VAPID_SERVER_PUBLIC_KEY`, `npx wrangler secret put VAPID_SERVER_PRIVATE_KEY`, and `npx wrangler secret put VAPID_SUBJECT`; enter each value at its prompt. Never commit `.dev.vars` or share the private key. Deploy the app and run `npm run cf:migrate` so D1 has the `push_subscriptions` table. Each teammate must enable browser notifications on each device and grant permission before they can receive push nudges (email nudges still work when Resend is configured).
+Project owners invite teammates by email or username from Team or Project settings. The invite appears in that person’s notifications, where they can accept or decline. **Nudge** on the Team page is also an in-app notification.
 
 ---
 
@@ -284,4 +269,4 @@ TeamUP helps busy groups manage deadlines, task ownership, availability, and rem
 1. Sign in with name + email on the live site
 2. Create a project and add a task with a due date
 3. Reload — the task should still be there
-4. Create an invite link from Project settings and open it in another browser/profile to join
+4. From Team, search a teammate by email or username and send an invite. Accept it from the other account’s notifications.

@@ -32,8 +32,8 @@ export function LandingGettingStarted() {
             </span>
             <h3>Create or join your group</h3>
             <p>
-              In your workspace, create a project. To join one, open your teammate’s invite link and
-              accept the invitation.
+              In your workspace, create a project. To join one, accept the invite in your
+              notifications.
             </p>
           </li>
           <li>
