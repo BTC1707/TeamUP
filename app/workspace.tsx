@@ -738,10 +738,22 @@ export default function Workspace({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'respond', inviteId, decision }),
       });
+      const state = decision === 'accept' ? 'accepted' : 'rejected';
+      const actorName = note.meta.actorName || '';
+      const projectName = note.meta.projectName || '';
+      const inviteLabel = actorName ? `${actorName}'s invite` : 'an invite';
       setNotifications((current) =>
         current.map((item) =>
           item.id === note.id
-            ? { ...item, read: true, meta: { ...item.meta, state: decision === 'accept' ? 'accepted' : 'rejected' } }
+            ? {
+                ...item,
+                read: true,
+                title: state === 'accepted' ? 'Accepted' : 'Declined',
+                body: projectName
+                  ? `You ${state === 'accepted' ? 'accepted' : 'declined'} ${inviteLabel} to join ${projectName}.`
+                  : `You ${state === 'accepted' ? 'accepted' : 'declined'} ${inviteLabel}.`,
+                meta: { ...item.meta, state },
+              }
             : item,
         ),
       );

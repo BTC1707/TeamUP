@@ -2,7 +2,7 @@ import type { Actor } from './store';
 import { getProject } from './store';
 import { nextMemberColor } from '@/lib/availability-calendar';
 import { emailConfigured, inviteEmailContent, sendEmail } from '@/lib/email';
-import { insertNotifications } from '@/lib/notifications';
+import { insertNotifications, settleInviteNotification } from '@/lib/notifications';
 import { avatarUrlFor } from '@/lib/avatar';
 
 export async function hashInvite(token: string) {
@@ -225,7 +225,19 @@ export async function respondToMemberInvite(
       group_id: string;
     }>();
   if (!invite || invite.invitee_id !== u.userId) throw new Error('INVITE_INVALID');
-  if (invite.status !== 'pending') return { status: invite.status, projectId: invite.project_id };
+  if (invite.status !== 'pending') {
+    if (invite.status === 'accepted' || invite.status === 'rejected') {
+      await settleInviteNotification(
+        db,
+        u.userId,
+        invite.id,
+        invite.status,
+        '',
+        invite.title,
+      );
+    }
+    return { status: invite.status, projectId: invite.project_id };
+  }
 
   if (decision === 'reject') {
     await db
@@ -242,6 +254,7 @@ export async function respondToMemberInvite(
         meta: { inviteId: invite.id, actorName: u.displayName, projectName: invite.title },
       },
     ]);
+    await settleInviteNotification(db, u.userId, invite.id, 'rejected', '', invite.title);
     return { status: 'rejected', projectId: invite.project_id };
   }
 
@@ -259,18 +272,19 @@ export async function respondToMemberInvite(
     )
     .bind(invite.group_id, u.userId, color)
     .run();
-  await insertNotifications(db, [
-    {
-      userId: invite.inviter_id,
-      projectId: invite.project_id,
-      type: 'invite_response',
-      title: 'Invite accepted',
-      body: `${u.displayName} joined ${invite.title}.`,
-      meta: { inviteId: invite.id, actorName: u.displayName, projectName: invite.title },
-    },
-  ]);
-  return { status: 'accepted', projectId: invite.project_id };
-}
+    await insertNotifications(db, [
+      {
+        userId: invite.inviter_id,
+        projectId: invite.project_id,
+        type: 'invite_response',
+        title: 'Invite accepted',
+        body: `${u.displayName} joined ${invite.title}.`,
+        meta: { inviteId: invite.id, actorName: u.displayName, projectName: invite.title },
+      },
+    ]);
+    await settleInviteNotification(db, u.userId, invite.id, 'accepted', '', invite.title);
+    return { status: 'accepted', projectId: invite.project_id };
+  }
 
 export async function revokeInvite(db: D1Database, project: string, u: Actor) {
   const p = await getProject(db, project, u);

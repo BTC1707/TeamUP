@@ -72,6 +72,55 @@ export async function insertNotifications(
   return stmts.length;
 }
 
+function inviteDecisionCopy(
+  status: 'accepted' | 'rejected',
+  actorName: string,
+  projectName: string,
+) {
+  const title = status === 'accepted' ? 'Accepted' : 'Declined';
+  const verb = status === 'accepted' ? 'accepted' : 'declined';
+  const invite = actorName ? `${actorName}'s invite` : 'an invite';
+  const body = projectName
+    ? `You ${verb} ${invite} to join ${projectName}.`
+    : `You ${verb} ${invite}.`;
+  return { title, body };
+}
+
+/** Replace a pending invite notification once the person accepts or declines. */
+export async function settleInviteNotification(
+  db: D1Database,
+  userId: string,
+  inviteId: string,
+  status: 'accepted' | 'rejected',
+  actorName: string,
+  projectName: string,
+) {
+  if (!inviteId) return;
+  const rows = await db
+    .prepare(`SELECT id, meta FROM notifications WHERE user_id=? AND type='project_invite'`)
+    .bind(userId)
+    .all<{ id: string; meta: string }>();
+  const updates = rows.results.flatMap((row) => {
+    const meta = safeMeta(row.meta);
+    if (meta.inviteId !== inviteId) return [];
+    if (meta.state === 'accepted' || meta.state === 'rejected') return [];
+    const copy = inviteDecisionCopy(
+      status,
+      meta.actorName || actorName,
+      projectName || meta.projectName || '',
+    );
+    meta.state = status;
+    return [
+      db
+        .prepare(
+          'UPDATE notifications SET title=?, body=?, read=1, meta=? WHERE id=? AND user_id=?',
+        )
+        .bind(copy.title, copy.body.slice(0, 2000), JSON.stringify(meta), row.id, userId),
+    ];
+  });
+  if (updates.length) await db.batch(updates);
+}
+
 export async function listNotifications(db: D1Database, userId: string, limit = 50) {
   const rows = await db
     .prepare(
@@ -90,7 +139,7 @@ export async function listNotifications(db: D1Database, userId: string, limit = 
       created_at: string;
       meta: string;
     }>();
-  return rows.results.map((row) => ({
+  const items = rows.results.map((row) => ({
     id: row.id,
     userId: row.user_id,
     projectId: row.project_id,
@@ -101,6 +150,68 @@ export async function listNotifications(db: D1Database, userId: string, limit = 
     createdAt: row.created_at,
     meta: safeMeta(row.meta),
   })) satisfies AppNotification[];
+  return reconcileInviteNotifications(db, userId, items);
+}
+
+async function reconcileInviteNotifications(
+  db: D1Database,
+  userId: string,
+  items: AppNotification[],
+) {
+  const pending = items.filter(
+    (item) =>
+      item.type === 'project_invite' &&
+      item.meta.inviteId &&
+      item.meta.state !== 'accepted' &&
+      item.meta.state !== 'rejected',
+  );
+  if (!pending.length) return items;
+  const ids = [...new Set(pending.map((item) => item.meta.inviteId))];
+  const invites = await db
+    .prepare(
+      `SELECT i.id, i.status, p.title
+       FROM project_member_invites i JOIN projects p ON p.id=i.project_id
+       WHERE i.id IN (${ids.map(() => '?').join(',')})`,
+    )
+    .bind(...ids)
+    .all<{ id: string; status: string; title: string }>();
+  const byId = new Map(invites.results.map((invite) => [invite.id, invite]));
+  let changed = false;
+  const next = items.map((item) => {
+    if (!pending.some((entry) => entry.id === item.id)) return item;
+    const invite = byId.get(item.meta.inviteId);
+    if (!invite || (invite.status !== 'accepted' && invite.status !== 'rejected')) return item;
+    changed = true;
+    const status = invite.status === 'accepted' ? 'accepted' : 'rejected';
+    const copy = inviteDecisionCopy(
+      status,
+      item.meta.actorName || '',
+      invite.title || item.meta.projectName || '',
+    );
+    return {
+      ...item,
+      read: true,
+      title: copy.title,
+      body: copy.body,
+      meta: { ...item.meta, state: status, projectName: invite.title || item.meta.projectName || '' },
+    };
+  });
+  if (changed) {
+    await db.batch(
+      next.flatMap((item) => {
+        const original = items.find((entry) => entry.id === item.id);
+        if (!original || original === item || original.title === item.title) return [];
+        return [
+          db
+            .prepare(
+              'UPDATE notifications SET title=?, body=?, read=1, meta=? WHERE id=? AND user_id=?',
+            )
+            .bind(item.title, item.body, JSON.stringify(item.meta), item.id, userId),
+        ];
+      }),
+    );
+  }
+  return next;
 }
 
 export async function markNotificationsRead(
