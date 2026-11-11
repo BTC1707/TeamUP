@@ -69,13 +69,14 @@ import {
   AVAILABILITY_HOUR_MIN,
   applyBlockBusyHours,
   applySuggestOpenHours,
-  availabilityHeat,
+  availabilityMemberColor,
   bestTeamRanges,
   classifyGoogleSlots,
   countSlotsOutsideDefaultBand,
   dayAvailabilitySummaries,
   hourLabel,
   slotKeyFor,
+  teammateSlotBackground,
 } from '@/lib/availability-calendar';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -578,10 +579,16 @@ export default function Workspace({
       selected: myAvailabilitySet,
     }),
   );
-  const memberAvailability = project.members.map((member) => ({
-    member,
-    slots: member.id === me ? myAvailabilitySet : new Set(project.availability[member.id] || []),
-  }));
+  let teammateColorIndex = 0;
+  const memberAvailability = project.members.map((member) => {
+    const self = member.id === me;
+    return {
+      member,
+      self,
+      color: self ? '#5b54d9' : availabilityMemberColor(teammateColorIndex++),
+      slots: self ? myAvailabilitySet : new Set(project.availability[member.id] || []),
+    };
+  });
   const submittedSchedules = memberAvailability.filter((entry) => entry.slots.size > 0).length;
   const availabilityCountAt = (slotKey: string) =>
     memberAvailability.reduce((count, entry) => count + (entry.slots.has(slotKey) ? 1 : 0), 0);
@@ -2929,7 +2936,7 @@ export default function Workspace({
                 >
                   Everyone
                 </button>
-                {memberAvailability.map(({ member, slots }) => {
+                {memberAvailability.map(({ member, slots, color }) => {
                   const submitted = slots.size > 0;
                   const selected = availabilityFocusId === member.id;
                   const firstName = member.name.trim().split(/\s+/)[0] || member.name;
@@ -2943,6 +2950,7 @@ export default function Workspace({
                         (selected ? ' selected' : '') +
                         (submitted ? ' submitted' : '')
                       }
+                      style={{ '--person-color': color } as CSSProperties}
                       aria-pressed={selected}
                       title={
                         submitted
@@ -2986,8 +2994,8 @@ export default function Workspace({
                   Your hours
                 </span>
                 <span>
-                  <i className='availability-legend-swatch heat' aria-hidden='true' />
-                  More teammates free
+                  <i className='availability-legend-swatch teammates' aria-hidden='true' />
+                  Teammate hours
                 </span>
                 {googleBusySlots.length > 0 ? (
                   <span className='availability-legend-busy'>
@@ -3130,15 +3138,28 @@ export default function Workspace({
                         const past = new Date(key) < new Date();
                         const selected = myAvailabilitySet.has(key);
                         const googleBusy = googleBusySet.has(key);
-                        const freeCount = availabilityCountAt(key);
-                        const heat = availabilityHeat(freeCount);
-                        const focusedFree = availabilityFocusId
-                          ? memberAvailability.some(
-                              (entry) =>
-                                entry.member.id === availabilityFocusId && entry.slots.has(key),
-                            )
-                          : false;
-                        const freeLabel = `${freeCount} of ${project.members.length} free`;
+                        const freeHere = memberAvailability.filter((entry) => entry.slots.has(key));
+                        const teammatesHere = freeHere.filter((entry) => !entry.self);
+                        const focusedEntry = availabilityFocusId
+                          ? memberAvailability.find((entry) => entry.member.id === availabilityFocusId)
+                          : undefined;
+                        const focusedFree = focusedEntry ? focusedEntry.slots.has(key) : false;
+                        const showSelf = availabilityFocusId
+                          ? Boolean(focusedEntry?.self && focusedFree)
+                          : selected;
+                        const visibleTeamColors = availabilityFocusId
+                          ? focusedEntry && !focusedEntry.self && focusedFree
+                            ? [focusedEntry.color]
+                            : []
+                          : teammatesHere.map((entry) => entry.color);
+                        const teamBackground =
+                          !past && visibleTeamColors.length > 0
+                            ? teammateSlotBackground(visibleTeamColors, Boolean(availabilityFocusId))
+                            : undefined;
+                        const showBusy = googleBusy && !showSelf && visibleTeamColors.length === 0;
+                        const freeLabel = freeHere.length
+                          ? `${freeHere.map((entry) => entry.member.name).join(', ')} free`
+                          : 'No one free';
                         return (
                           <button
                             key={key}
@@ -3147,23 +3168,24 @@ export default function Workspace({
                             data-availability-past={past ? '1' : '0'}
                             aria-label={`${fmt(dateValue)} at ${hourLabel(hour)}, ${freeLabel}${
                               selected ? ', your available hour' : ''
-                            }${googleBusy && !selected ? ', busy on Google Calendar' : ''}${
+                            }${showBusy ? ', busy on Google Calendar' : ''}${
                               past ? ', time has passed' : ''
                             }`}
                             aria-pressed={selected}
                             disabled={past}
-                            title={
-                              past
-                                ? 'Time has passed'
-                                : googleBusy && !selected
-                                  ? 'Busy'
-                                  : freeLabel
-                            }
+                            title={past ? 'Time has passed' : showBusy ? 'Busy' : freeLabel}
+                            style={!showSelf && teamBackground ? { background: teamBackground } : undefined}
                             className={
                               'slot' +
-                              (selected ? ' selected' : '') +
-                              (googleBusy && !selected ? ' google-busy' : '') +
-                              (heat && !(googleBusy && !selected) ? ` heat-${heat}` : '') +
+                              (showSelf ? ' selected' : '') +
+                              (showBusy ? ' google-busy' : '') +
+                              (teamBackground && !showSelf ? ' team-marked' : '') +
+                              (showSelf && teammatesHere.length > 0 && !availabilityFocusId
+                                ? ' team-overlap'
+                                : '') +
+                              (availabilityFocusId && focusedFree && !focusedEntry?.self
+                                ? ' slot-focus'
+                                : '') +
                               (availabilityFocusId && !focusedFree ? ' slot-muted' : '') +
                               (past ? ' past' : ' slot-paintable')
                             }
@@ -3180,20 +3202,27 @@ export default function Workspace({
                             {past ? (
                               <LockKeyhole
                                 size={14}
-                                className='availability-lock mx-auto'
+                                className='availability-lock'
                                 aria-hidden='true'
                               />
-                            ) : selected ? (
-                              <Check size={14} className='mx-auto' />
-                            ) : googleBusy ? (
+                            ) : showSelf ? (
+                              <Check size={14} aria-hidden='true' />
+                            ) : showBusy ? (
                               <span className='slot-busy-label' aria-hidden='true'>
                                 Busy
                               </span>
-                            ) : freeCount >= 2 ? (
-                              <span className='slot-count'>{freeCount}</span>
-                            ) : (
-                              ''
-                            )}
+                            ) : null}
+                            {!past && showSelf && !availabilityFocusId && teammatesHere.length > 0 ? (
+                              <span className='slot-marks' aria-hidden='true'>
+                                {teammatesHere.map((entry) => (
+                                  <i
+                                    key={entry.member.id}
+                                    className='slot-mark'
+                                    style={{ background: entry.color }}
+                                  />
+                                ))}
+                              </span>
+                            ) : null}
                           </button>
                         );
                       })}

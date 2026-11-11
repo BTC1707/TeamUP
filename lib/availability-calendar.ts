@@ -35,6 +35,36 @@ export function availabilityHeat(count: number) {
   return 4;
 }
 
+/** Stable colors for teammates on the week grid. Your hours stay the app purple. */
+export const AVAILABILITY_MEMBER_COLORS = [
+  '#0f766e',
+  '#c2410c',
+  '#be185d',
+  '#1d4ed8',
+  '#15803d',
+  '#a16207',
+  '#0e7490',
+  '#7c3aed',
+];
+
+export function availabilityMemberColor(index: number) {
+  return AVAILABILITY_MEMBER_COLORS[index % AVAILABILITY_MEMBER_COLORS.length];
+}
+
+/** One teammate fills the hour. Several teammates split it so each color stays visible. */
+export function teammateSlotBackground(colors: string[], solid = false) {
+  if (colors.length === 0) return undefined;
+  const paint = (color: string) => (solid ? color : `color-mix(in srgb, ${color} 36%, #fff)`);
+  if (colors.length === 1) return paint(colors[0]);
+  const slice = 100 / colors.length;
+  const stops = colors.map((color, index) => {
+    const start = (index * slice).toFixed(2);
+    const end = ((index + 1) * slice).toFixed(2);
+    return `${paint(color)} ${start}% ${end}%`;
+  });
+  return `linear-gradient(to right, ${stops.join(', ')})`;
+}
+
 export type BusyInterval = { start: number; end: number };
 
 export function slotKeyFor(date: string, hour: number) {

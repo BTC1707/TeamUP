@@ -3,6 +3,33 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
+function initials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0] || '')
+      .join('')
+      .toUpperCase() || '–'
+  );
+}
+
+function SearchAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [avatarUrl]);
+  if (avatarUrl && !failed) {
+    return (
+      <span className='avatar'>
+        <img src={avatarUrl} alt='' onError={() => setFailed(true)} />
+      </span>
+    );
+  }
+  return <span className='avatar'>{initials(name)}</span>;
+}
+
 type Person = {
   id: string;
   name: string;
@@ -132,12 +159,15 @@ export default function InviteLink({ project }: { project: string }) {
           ) : null}
           {people.map((person) => (
             <div className='invite-result' key={person.id}>
-              <div>
-                <strong>{person.name}</strong>
-                <small className='block'>
-                  {person.username ? `@${person.username} · ` : ''}
-                  {person.email}
-                </small>
+              <div className='invite-result-person'>
+                <SearchAvatar name={person.name} avatarUrl={person.avatarUrl} />
+                <div>
+                  <strong>{person.name}</strong>
+                  <small className='block'>
+                    {person.username ? `@${person.username} · ` : ''}
+                    {person.email}
+                  </small>
+                </div>
               </div>
               <button
                 type='button'

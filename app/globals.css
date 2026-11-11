@@ -1036,9 +1036,9 @@ button.member-row-button:focus-visible {
   background: #5b54d9;
   border-color: #5b54d9;
 }
-.availability-legend-swatch.heat {
-  background: linear-gradient(90deg, #f3f1ff, #5b54d9);
-  border-color: #c4bdfc;
+.availability-legend-swatch.teammates {
+  background: linear-gradient(90deg, #0f766e 50%, #c2410c 50%);
+  border-color: #0f766e;
 }
 .availability-people {
   display: flex;
@@ -1085,7 +1085,7 @@ button.member-row-button:focus-visible {
   background: #d0d5dd;
 }
 .availability-person.submitted .availability-person-status {
-  background: #5b54d9;
+  background: var(--person-color, #5b54d9);
 }
 .availability-legend-swatch.busy {
   background:
@@ -1304,6 +1304,11 @@ button.member-row-button:focus-visible {
   padding: 0 2px;
 }
 .slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
   width: 100%;
   min-width: 0;
   height: 100%;
@@ -1365,28 +1370,26 @@ button.member-row-button:focus-visible {
   background: #5b54d9;
   color: #fff;
 }
-.slot.heat-1:not(.selected):not(.past) {
-  background: #f4f2ff;
-}
-.slot.heat-2:not(.selected):not(.past) {
-  background: #ddd8ff;
-}
-.slot.heat-3:not(.selected):not(.past) {
-  background: #c4bdfc;
-  color: #2a2460;
-}
-.slot.heat-4:not(.selected):not(.past) {
-  background: #a79cf6;
-  color: #2a2460;
-}
-.slot.selected.heat-1,
-.slot.selected.heat-2,
-.slot.selected.heat-3,
-.slot.selected.heat-4 {
-  box-shadow: inset 0 0 0 2px #fff;
+.slot.slot-focus {
+  color: #fff;
 }
 .slot.slot-muted {
-  opacity: 0.32;
+  opacity: 0.28;
+}
+.slot-marks {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 0 2px;
+  pointer-events: none;
+}
+.slot-mark {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px #fff;
 }
 .slot-count {
   display: block;
@@ -1730,6 +1733,19 @@ button.member-row-button:focus-visible {
   border: 1px solid #e6e3f4;
   border-radius: 10px;
   background: #fff;
+}
+.invite-result-person {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.invite-result-person strong,
+.invite-result-person small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .invite-result small {
   color: #667085;
