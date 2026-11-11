@@ -12,6 +12,7 @@ import {
 } from '@/lib/store';
 import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
 import { avatarUrlFor } from '@/lib/avatar';
+import { availabilitySlotsError } from '@/lib/availability-calendar';
 import type { Project } from '@/lib/model';
 export async function GET(req: Request) {
   try {
@@ -223,19 +224,8 @@ export async function POST(req: Request) {
       t.milestone = ms.get(t.milestone) || '';
     }
     const slots = p.availability[u.userId] || [];
-    if (
-      !Array.isArray(slots) ||
-      slots.length > 100 ||
-      new Set(slots).size !== slots.length ||
-      slots.some(
-        (s: unknown) =>
-          typeof s !== 'string' ||
-          !Number.isFinite(Date.parse(s)) ||
-          (!previous?.availability[u.userId]?.includes(s as string) &&
-            Date.parse(s as string) < Date.now()),
-      )
-    )
-      return Response.json({ error: 'Choose future availability times.' }, { status: 400 });
+    const slotError = availabilitySlotsError(slots, previous?.availability[u.userId] || []);
+    if (slotError) return Response.json({ error: slotError }, { status: 400 });
     p.availability = { ...(previous?.availability || {}), [u.userId]: slots };
     const token = crypto.randomUUID();
     const group = p.groupId!;

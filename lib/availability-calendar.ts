@@ -5,6 +5,35 @@ export const AVAILABILITY_HOUR_MAX = 22;
 /** Default visible band: 9am–6pm (hour blocks 9…17). */
 export const AVAILABILITY_DEFAULT_START = 9;
 export const AVAILABILITY_DEFAULT_END = 17;
+/** A full week of hour blocks, plus room for hours already saved. */
+export const AVAILABILITY_SLOT_LIMIT = 7 * 24;
+
+/** Reject duplicate, unparseable, or newly chosen past slots. */
+export function availabilitySlotsError(slots: unknown, previous: string[] = []) {
+  if (!Array.isArray(slots) || slots.length > AVAILABILITY_SLOT_LIMIT) {
+    return 'Choose future availability times.';
+  }
+  if (new Set(slots).size !== slots.length) return 'Choose future availability times.';
+  const known = new Set(previous);
+  for (const slot of slots) {
+    if (typeof slot !== 'string' || !Number.isFinite(Date.parse(slot))) {
+      return 'Choose future availability times.';
+    }
+    if (!known.has(slot) && Date.parse(slot) < Date.now()) {
+      return 'Choose future availability times.';
+    }
+  }
+  return null;
+}
+
+/** 0 = no team overlap. 1–4 = more teammates free in that hour. */
+export function availabilityHeat(count: number) {
+  if (count <= 1) return 0;
+  if (count === 2) return 1;
+  if (count === 3) return 2;
+  if (count === 4) return 3;
+  return 4;
+}
 
 export type BusyInterval = { start: number; end: number };
 
@@ -90,6 +119,72 @@ export type BestTimeRange = {
   endHour: number;
   label: string;
 };
+
+export type TeamTimeRange = BestTimeRange & {
+  people: number;
+  total: number;
+};
+
+/** Longest blocks where the most teammates are free. */
+export function bestTeamRanges(opts: {
+  dates: string[];
+  countAt: (slotKey: string) => number;
+  total: number;
+  minPeople?: number;
+  limit?: number;
+  hourMin?: number;
+  hourMax?: number;
+  now?: Date;
+}) {
+  const hourMin = opts.hourMin ?? AVAILABILITY_HOUR_MIN;
+  const hourMax = opts.hourMax ?? AVAILABILITY_HOUR_MAX;
+  const minPeople = opts.minPeople ?? 2;
+  const now = opts.now || new Date();
+  const ranges: TeamTimeRange[] = [];
+  if (opts.total < minPeople) return ranges;
+
+  for (const date of opts.dates) {
+    let hour = hourMin;
+    while (hour <= hourMax) {
+      const key = slotKeyFor(date, hour);
+      const count = new Date(key) < now ? 0 : opts.countAt(key);
+      if (count < minPeople) {
+        hour++;
+        continue;
+      }
+      const startHour = hour;
+      const people = count;
+      hour++;
+      while (hour <= hourMax) {
+        const nextKey = slotKeyFor(date, hour);
+        if (new Date(nextKey) < now || opts.countAt(nextKey) !== people) break;
+        hour++;
+      }
+      const dayLabel = new Date(date + 'T12:00:00').toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+      ranges.push({
+        date,
+        startHour,
+        endHour: hour,
+        people,
+        total: opts.total,
+        label: `${dayLabel} · ${formatHourRange(startHour, hour)} · ${people} of ${opts.total} free`,
+      });
+    }
+  }
+
+  ranges.sort(
+    (a, b) =>
+      b.people - a.people ||
+      b.endHour - b.startHour - (a.endHour - a.startHour) ||
+      a.date.localeCompare(b.date) ||
+      a.startHour - b.startHour,
+  );
+  return ranges.slice(0, opts.limit ?? 3);
+}
 
 /** Merge contiguous shared (overlap) hour slots into readable ranges. */
 export function bestOverlapRanges(opts: {

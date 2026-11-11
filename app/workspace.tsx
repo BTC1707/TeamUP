@@ -69,7 +69,8 @@ import {
   AVAILABILITY_HOUR_MIN,
   applyBlockBusyHours,
   applySuggestOpenHours,
-  bestOverlapRanges,
+  availabilityHeat,
+  bestTeamRanges,
   classifyGoogleSlots,
   countSlotsOutsideDefaultBand,
   dayAvailabilitySummaries,
@@ -393,7 +394,7 @@ export default function Workspace({
   const [modal, setModal] = useState('');
   const [filter, setFilter] = useState('active');
   const [milestoneFilter, setMilestoneFilter] = useState('all');
-  const [availabilityView, setAvailabilityView] = useState<'calendar' | 'overlap'>('calendar');
+  const [availabilityFocusId, setAvailabilityFocusId] = useState<string | null>(null);
   const [availabilityDayIndex, setAvailabilityDayIndex] = useState(0);
   const [availabilityNarrow, setAvailabilityNarrow] = useState(false);
   const [availabilityFullHours, setAvailabilityFullHours] = useState(false);
@@ -422,6 +423,8 @@ export default function Workspace({
   const availabilityPaintEndListenerRef = useRef(() => availabilityPaintEndRef.current());
   const projectRef = useRef(project);
   const availabilitySaveTailRef = useRef(Promise.resolve());
+  const availabilityAckRef = useRef<string[] | null>(null);
+  const availabilityExpandedForRef = useRef<string | null>(null);
   const [draft, setDraft] = useState<any>({});
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
@@ -509,16 +512,35 @@ export default function Workspace({
   }, []);
 
   useEffect(() => {
-    if (availabilityView !== 'overlap') return;
+    availabilityAckRef.current = null;
+    availabilityExpandedForRef.current = null;
+    setAvailabilityFocusId(null);
+  }, [project.id]);
+
+  useEffect(() => {
+    if (!project.id || availabilityExpandedForRef.current === project.id) return;
+    const userId = user?.id || '';
     const dates = Array.from({ length: 7 }, (_, index) => future(index));
-    const schedules = Object.values(project.availability).filter((slots) => slots.length);
-    if (schedules.length < 2) return;
+    const mine = new Set(
+      pendingAvailability !== null ? pendingAvailability : project.availability[userId] || [],
+    );
     const outside = countSlotsOutsideDefaultBand({
       dates,
-      include: (slotKey) => schedules.every((slots) => slots.includes(slotKey)),
+      include: (slotKey) => {
+        if (pendingAvailability !== null) return mine.has(slotKey);
+        let count = mine.has(slotKey) ? 1 : 0;
+        for (const member of project.members) {
+          if (member.id === userId) continue;
+          if ((project.availability[member.id] || []).includes(slotKey)) count += 1;
+        }
+        return count >= 2;
+      },
     });
-    if (outside.total > 0) setAvailabilityFullHours(true);
-  }, [availabilityView, project.availability]);
+    if (outside.total > 0) {
+      availabilityExpandedForRef.current = project.id;
+      setAvailabilityFullHours(true);
+    }
+  }, [project.id, project.availability, project.members, pendingAvailability, user?.id]);
 
   useEffect(() => {
     if (pendingAvailability === null) return;
@@ -559,25 +581,23 @@ export default function Workspace({
       selected: myAvailabilitySet,
     }),
   );
-  const schedulesWithAvailability = Object.values(project.availability).filter(
-    (slots) => slots.length,
-  );
-  const isCommonAvailabilitySlot = (slotKey: string) =>
-    schedulesWithAvailability.length > 1 &&
-    schedulesWithAvailability.every((slots) => slots.includes(slotKey));
-  const overlapBestTimes =
-    availabilityView === 'overlap'
-      ? bestOverlapRanges({
-          dates: availabilityDates,
-          isCommon: isCommonAvailabilitySlot,
-        })
-      : [];
+  const memberAvailability = project.members.map((member) => ({
+    member,
+    slots: member.id === me ? myAvailabilitySet : new Set(project.availability[member.id] || []),
+  }));
+  const submittedSchedules = memberAvailability.filter((entry) => entry.slots.size > 0).length;
+  const availabilityCountAt = (slotKey: string) =>
+    memberAvailability.reduce((count, entry) => count + (entry.slots.has(slotKey) ? 1 : 0), 0);
+  const overlapBestTimes = bestTeamRanges({
+    dates: availabilityDates,
+    countAt: availabilityCountAt,
+    total: project.members.length,
+  });
   const outsideRelevantSlots = countSlotsOutsideDefaultBand({
     dates: availabilityDates,
     include: (slotKey) => {
-      if (availabilityView === 'overlap') return isCommonAvailabilitySlot(slotKey);
       if (pendingAvailability !== null) return myAvailabilitySet.has(slotKey);
-      return false;
+      return availabilityCountAt(slotKey) >= 2;
     },
   });
   const done = project.tasks.filter((t) => t.status === 'done').length;
@@ -1488,7 +1508,6 @@ export default function Workspace({
         busyIntervals,
       });
       setGoogleSyncPreview(classified);
-      setAvailabilityView('calendar');
     } catch (syncError) {
       toast.error((syncError as Error).message || 'Unable to sync Google Calendar.');
     } finally {
@@ -1509,17 +1528,12 @@ export default function Workspace({
     setGoogleBusySlots(preview.busyKeys);
     setPendingAvailability(null);
     setGoogleSyncPreview(null);
-    const saved = await save({
-      ...project,
-      availability: { ...project.availability, [me]: nextAvailability },
-    });
-    if (saved) {
-      toast.success(
-        preview.busyKeys.length
-          ? 'Busy hours from your calendar are blocked on your schedule.'
-          : 'Calendar checked. No busy hours in this week — your selections are unchanged.',
-      );
-    }
+    commitAvailabilitySlots(nextAvailability, { force: true });
+    toast.success(
+      preview.busyKeys.length
+        ? 'Busy hours from your calendar are blocked on your schedule.'
+        : 'Calendar checked. No busy hours in this week — your selections are unchanged.',
+    );
   }
 
   function startGoogleSuggestOpen() {
@@ -1533,19 +1547,15 @@ export default function Workspace({
     setGoogleBusySlots(googleSyncPreview.busyKeys);
     setPendingAvailability(suggested);
     setGoogleSyncPreview(null);
-    setAvailabilityView('calendar');
     toast.message('Review suggested open hours, then Apply or Discard.');
   }
 
-  async function applyPendingAvailability() {
+  function applyPendingAvailability() {
     if (!requireProject() || pendingAvailability === null) return;
     const next = pendingAvailability;
     setPendingAvailability(null);
-    const saved = await save({
-      ...project,
-      availability: { ...project.availability, [me]: next },
-    });
-    if (saved) toast.success('Availability updated from Google Calendar suggestions.');
+    commitAvailabilitySlots(next, { force: true });
+    toast.success('Availability updated from Google Calendar suggestions.');
   }
 
   function discardPendingAvailability() {
@@ -1576,57 +1586,97 @@ export default function Workspace({
     setProjects((prev) => prev.map((p) => (p.id === next.id ? next : p)));
   }
 
-  /** Optimistic availability commit — keeps the grid snappy on slow network saves. */
-  function commitAvailabilitySlots(next: string[]) {
+  /** Optimistic availability commit — writes only this member's hours. */
+  function commitAvailabilitySlots(next: string[], opts?: { force?: boolean }) {
     if (!requireProject()) return;
-    if (pendingAvailability !== null) {
+    if (!opts?.force && pendingAvailability !== null) {
       setPendingAvailability(next);
       setAvailabilityPaintPreview(null);
       return;
     }
 
+    const userId = me;
     const base = projectRef.current;
-    const nextProject = {
+    if (availabilityAckRef.current === null) {
+      availabilityAckRef.current = [...(base.availability[userId] || [])];
+    }
+    applyProjectLocally({
       ...base,
-      availability: { ...base.availability, [me]: next },
-    };
-    applyProjectLocally(nextProject);
+      availability: { ...base.availability, [userId]: next },
+    });
     setAvailabilityPaintPreview(null);
 
-    if (localOnly) return;
+    if (localOnly) {
+      availabilityAckRef.current = next;
+      return;
+    }
 
     availabilitySaveTailRef.current = availabilitySaveTailRef.current
       .catch(() => undefined)
       .then(async () => {
-        // Keep flushing until the server matches the latest painted slots.
         for (;;) {
           const payload = projectRef.current;
-          const slotsBefore = payload.availability[me] || [];
+          const slotsBefore = payload.availability[userId] || [];
           try {
-            const result = await api('/api/workspace', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ action: 'update', project: payload }),
-            });
-            const slotsNow = projectRef.current.availability[me] || [];
-            if (sameAvailabilitySlots(slotsBefore, slotsNow)) {
-              applyProjectLocally(result.project);
-              return;
-            }
+            const result = await postAvailabilitySlots(payload.id, slotsBefore);
+            const slotsNow = projectRef.current.availability[userId] || [];
+            availabilityAckRef.current = (result.availability?.[userId] as string[]) || slotsBefore;
             applyProjectLocally({
-              ...result.project,
+              ...projectRef.current,
               availability: {
-                ...result.project.availability,
-                [me]: slotsNow,
+                ...(result.availability || {}),
+                [userId]: sameAvailabilitySlots(slotsBefore, slotsNow) ? availabilityAckRef.current : slotsNow,
               },
             });
+            if (sameAvailabilitySlots(slotsBefore, slotsNow)) return;
           } catch (error) {
-            setError((error as Error).message);
-            toast.error((error as Error).message || 'Could not save availability.');
+            const message = (error as Error).message || 'Could not save availability.';
+            const slotsNow = projectRef.current.availability[userId] || [];
+            const rejected = /future availability|project details/i.test(message);
+            if (!rejected && !sameAvailabilitySlots(slotsBefore, slotsNow)) continue;
+            const ack = availabilityAckRef.current;
+            if (ack && (rejected || sameAvailabilitySlots(slotsBefore, slotsNow))) {
+              applyProjectLocally({
+                ...projectRef.current,
+                availability: { ...projectRef.current.availability, [userId]: ack },
+              });
+            }
+            setError(message);
+            toast.error(message);
             return;
           }
         }
       });
+  }
+
+  async function postAvailabilitySlots(projectId: string, slots: string[]) {
+    const send = () =>
+      api('/api/availability', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, slots }),
+      });
+    try {
+      return await send();
+    } catch (error) {
+      const message = (error as Error).message || '';
+      if (!/updated this project|reload before saving/i.test(message)) throw error;
+      try {
+        const data = await api('/api/workspace');
+        const fresh = (data.projects as Project[]).find((item) => item.id === projectId);
+        if (fresh) {
+          const userId = me;
+          applyProjectLocally({
+            ...projectRef.current,
+            version: fresh.version,
+            availability: { ...fresh.availability, [userId]: slots },
+          });
+        }
+      } catch {
+        // The retry below still writes this member's hours on their own.
+      }
+      return await send();
+    }
   }
 
   function paintAvailabilityKey(slotKey: string) {
@@ -1690,7 +1740,6 @@ export default function Workspace({
       opts.past ||
       Date.parse(opts.slotKey) <= Date.now() ||
       opts.event.button !== 0 ||
-      availabilityView !== 'calendar' ||
       !requireProject()
     ) {
       return;
@@ -1726,6 +1775,39 @@ export default function Workspace({
       window.removeEventListener('pointercancel', availabilityPaintEndListenerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (view !== 'Availability' || demoMode || localOnly || !project.id) return;
+    let cancelled = false;
+    const projectId = project.id;
+    async function refreshTeammateHours() {
+      if (availabilityPaintRef.current) return;
+      try {
+        const data = await api('/api/workspace');
+        if (cancelled || availabilityPaintRef.current) return;
+        if (projectRef.current.id !== projectId) return;
+        const fresh = (data.projects as Project[]).find((item) => item.id === projectId);
+        if (!fresh) return;
+        const userId = user?.id || '';
+        const mine = projectRef.current.availability[userId] || [];
+        applyProjectLocally({
+          ...projectRef.current,
+          availability: { ...fresh.availability, [userId]: mine },
+        });
+      } catch {
+        // Teammate hours refresh is best-effort.
+      }
+    }
+    void refreshTeammateHours();
+    const timer = window.setInterval(() => void refreshTeammateHours(), 20000);
+    const onFocus = () => void refreshTeammateHours();
+    window.addEventListener('focus', onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [view, demoMode, localOnly, project.id, user?.id]);
   async function setStatus(t: Task) {
     if (!requireProject()) return;
     if (
@@ -2853,24 +2935,15 @@ export default function Workspace({
                 <div>
                   <h2>Find time together</h2>
                   <p className='subtext availability-heading-note'>
-                    Select all the times that you’re free!
+                    Paint the hours you’re free. Darker cells mean more of the team is free then.
                   </p>
                 </div>
                 <span className='subtext'>
-                  {schedulesWithAvailability.length} / {project.members.length} schedules
+                  {submittedSchedules} / {project.members.length} schedules
                 </span>
               </div>
 
               <div className='availability-toolbar'>
-                <Tabs
-                  value={availabilityView}
-                  onValueChange={(value) => setAvailabilityView(value as 'calendar' | 'overlap')}
-                >
-                  <TabsList className='bg-[#dbd9fc] task-filter-tabs'>
-                    <TabsTrigger value='calendar'>My calendar</TabsTrigger>
-                    <TabsTrigger value='overlap'>Team overlap</TabsTrigger>
-                  </TabsList>
-                </Tabs>
                 <button
                   type='button'
                   className='btn availability-sync-button'
@@ -2882,25 +2955,79 @@ export default function Workspace({
                   {googleCalendarSyncBusy ? 'Syncing…' : 'Sync Google Calendar'}
                 </button>
               </div>
-              {availabilityView === 'overlap' ? (
-                <p className='availability-overlap-subtitle'>
-                  Shared free times within the group.
-                </p>
-              ) : null}
+
+              <div className='availability-people' role='list'>
+                <button
+                  type='button'
+                  className={
+                    'availability-person' + (availabilityFocusId ? '' : ' selected')
+                  }
+                  aria-pressed={!availabilityFocusId}
+                  onClick={() => setAvailabilityFocusId(null)}
+                >
+                  Everyone
+                </button>
+                {memberAvailability.map(({ member, slots }) => {
+                  const submitted = slots.size > 0;
+                  const selected = availabilityFocusId === member.id;
+                  const firstName = member.name.trim().split(/\s+/)[0] || member.name;
+                  return (
+                    <button
+                      key={member.id}
+                      type='button'
+                      role='listitem'
+                      className={
+                        'availability-person' +
+                        (selected ? ' selected' : '') +
+                        (submitted ? ' submitted' : '')
+                      }
+                      aria-pressed={selected}
+                      title={
+                        submitted
+                          ? `${member.name} has shared hours`
+                          : `${member.name} hasn’t shared hours yet`
+                      }
+                      onClick={() =>
+                        setAvailabilityFocusId((current) =>
+                          current === member.id ? null : member.id,
+                        )
+                      }
+                    >
+                      <AvatarFace name={member.name} avatarUrl={member.avatarUrl} />
+                      <span className='availability-person-name'>{firstName}</span>
+                      <i className='availability-person-status' aria-hidden='true' />
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className='availability-best-times'>
+                <h3>Best times this week</h3>
+                {overlapBestTimes.length > 0 ? (
+                  <ul>
+                    {overlapBestTimes.map((range) => (
+                      <li key={`${range.date}-${range.startHour}`}>{range.label}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>
+                    {submittedSchedules < 2
+                      ? 'When a teammate adds hours, the best overlaps show up here.'
+                      : 'No shared hours in this week yet.'}
+                  </p>
+                )}
+              </div>
 
               <div className='availability-legend' aria-label='Calendar legend'>
-                {availabilityView === 'calendar' ? (
-                  <span>
-                    <i className='availability-legend-swatch available' aria-hidden='true' />
-                    Available
-                  </span>
-                ) : (
-                  <span>
-                    <i className='availability-legend-swatch overlap' aria-hidden='true' />
-                    Shared free
-                  </span>
-                )}
-                {availabilityView === 'calendar' && googleBusySlots.length > 0 ? (
+                <span>
+                  <i className='availability-legend-swatch available' aria-hidden='true' />
+                  Your hours
+                </span>
+                <span>
+                  <i className='availability-legend-swatch heat' aria-hidden='true' />
+                  More teammates free
+                </span>
+                {googleBusySlots.length > 0 ? (
                   <span className='availability-legend-busy'>
                     <i className='availability-legend-swatch busy' aria-hidden='true' />
                     Busy
@@ -2911,12 +3038,6 @@ export default function Workspace({
                     >
                       Clear
                     </button>
-                  </span>
-                ) : null}
-                {availabilityView === 'calendar' ? (
-                  <span>
-                    <i className='availability-legend-swatch overlap' aria-hidden='true' />
-                    Team overlap
                   </span>
                 ) : null}
                 <span>
@@ -2971,12 +3092,6 @@ export default function Workspace({
                 </div>
               )}
 
-              {availabilityView === 'overlap' && schedulesWithAvailability.length < 2 && (
-                <div className='empty availability-empty'>
-                  At least two teammates need to add availability to show overlapping hours.
-                </div>
-              )}
-
               <div className='availability-hour-controls'>
                 {!availabilityFullHours && outsideRelevantSlots.total > 0 ? (
                   <button
@@ -2986,14 +3101,14 @@ export default function Workspace({
                   >
                     {outsideRelevantSlots.after > 0 && outsideRelevantSlots.before > 0
                       ? `${outsideRelevantSlots.total} ${
-                          availabilityView === 'overlap' ? 'shared times' : 'suggested times'
+                          pendingAvailability !== null ? 'suggested times' : 'shared times'
                         } outside 9am–6pm — show all`
                       : outsideRelevantSlots.after > 0
                         ? `${outsideRelevantSlots.after} ${
-                            availabilityView === 'overlap' ? 'shared time' : 'suggested time'
+                            pendingAvailability !== null ? 'suggested time' : 'shared time'
                           }${outsideRelevantSlots.after === 1 ? '' : 's'} after 6pm — show all`
                         : `${outsideRelevantSlots.before} ${
-                            availabilityView === 'overlap' ? 'shared time' : 'suggested time'
+                            pendingAvailability !== null ? 'suggested time' : 'shared time'
                           }${outsideRelevantSlots.before === 1 ? '' : 's'} before 9am — show all`}
                   </button>
                 ) : null}
@@ -3036,7 +3151,7 @@ export default function Workspace({
                         <span className={`day-number${isToday ? ' today' : ''}`}>
                           {date.getDate()}
                         </span>
-                        {availabilityView === 'calendar' && summary.length > 0 ? (
+                        {summary.length > 0 ? (
                           <span className='day-summary' title={summary.join(', ')}>
                             {summary.join(' · ')}
                           </span>
@@ -3053,45 +3168,42 @@ export default function Workspace({
                         const past = new Date(key) < new Date();
                         const selected = myAvailabilitySet.has(key);
                         const googleBusy = googleBusySet.has(key);
-                        const common =
-                          schedulesWithAvailability.length > 1 &&
-                          schedulesWithAvailability.every((slots) => slots.includes(key));
+                        const freeCount = availabilityCountAt(key);
+                        const heat = availabilityHeat(freeCount);
+                        const focusedFree = availabilityFocusId
+                          ? memberAvailability.some(
+                              (entry) =>
+                                entry.member.id === availabilityFocusId && entry.slots.has(key),
+                            )
+                          : false;
+                        const freeLabel = `${freeCount} of ${project.members.length} free`;
                         return (
                           <button
                             key={key}
                             type='button'
                             data-availability-slot={key}
                             data-availability-past={past ? '1' : '0'}
-                            aria-label={`${fmt(dateValue)} at ${hourLabel(hour)}${
-                              availabilityView === 'calendar' && selected ? ', available' : ''
-                            }${
-                              availabilityView === 'calendar' && googleBusy ? ', busy' : ''
-                            }${
-                              availabilityView === 'overlap' && common ? ', shared free time' : ''
-                            }${past ? ', time has passed' : ''}`}
+                            aria-label={`${fmt(dateValue)} at ${hourLabel(hour)}, ${freeLabel}${
+                              selected ? ', your available hour' : ''
+                            }${googleBusy && !selected ? ', busy on Google Calendar' : ''}${
+                              past ? ', time has passed' : ''
+                            }`}
                             aria-pressed={selected}
-                            disabled={busy || past || availabilityView === 'overlap'}
+                            disabled={past}
                             title={
-                              availabilityView === 'calendar' && googleBusy
-                                ? 'Busy'
-                                : availabilityView === 'calendar' && selected
-                                  ? 'Available'
-                                  : availabilityView === 'overlap' && common
-                                    ? 'Shared free time'
-                                    : undefined
+                              past
+                                ? 'Time has passed'
+                                : googleBusy && !selected
+                                  ? 'Busy'
+                                  : freeLabel
                             }
                             className={
-                              'slot ' +
-                              (availabilityView === 'calendar' && selected ? 'selected ' : '') +
-                              (availabilityView === 'calendar' && googleBusy
-                                ? 'google-busy '
-                                : '') +
-                              (common ? 'common ' : '') +
-                              (availabilityView === 'overlap' && !common
-                                ? 'not-overlapping '
-                                : '') +
-                              (past ? 'past' : '') +
-                              (availabilityView === 'calendar' && !past ? ' slot-paintable' : '')
+                              'slot' +
+                              (selected ? ' selected' : '') +
+                              (googleBusy && !selected ? ' google-busy' : '') +
+                              (heat && !(googleBusy && !selected) ? ` heat-${heat}` : '') +
+                              (availabilityFocusId && !focusedFree ? ' slot-muted' : '') +
+                              (past ? ' past' : ' slot-paintable')
                             }
                             onPointerDown={(event) =>
                               startAvailabilityPaint({
@@ -3109,14 +3221,14 @@ export default function Workspace({
                                 className='availability-lock mx-auto'
                                 aria-hidden='true'
                               />
-                            ) : availabilityView === 'calendar' && selected ? (
+                            ) : selected ? (
                               <Check size={14} className='mx-auto' />
-                            ) : availabilityView === 'calendar' && googleBusy ? (
+                            ) : googleBusy ? (
                               <span className='slot-busy-label' aria-hidden='true'>
                                 Busy
                               </span>
-                            ) : availabilityView === 'overlap' && common ? (
-                              <Check size={14} className='mx-auto' />
+                            ) : freeCount >= 2 ? (
+                              <span className='slot-count'>{freeCount}</span>
                             ) : (
                               ''
                             )}
@@ -3128,16 +3240,6 @@ export default function Workspace({
                 </div>
               </div>
 
-              {availabilityView === 'overlap' && overlapBestTimes.length > 0 && (
-                <div className='availability-best-times'>
-                  <h3>Best times this week</h3>
-                  <ul>
-                    {overlapBestTimes.map((range) => (
-                      <li key={`${range.date}-${range.startHour}`}>{range.label}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </section>
           )}
           {!isDemo && view === 'Files' && (

@@ -1036,6 +1036,57 @@ button.member-row-button:focus-visible {
   background: #5b54d9;
   border-color: #5b54d9;
 }
+.availability-legend-swatch.heat {
+  background: linear-gradient(90deg, #f3f1ff, #5b54d9);
+  border-color: #c4bdfc;
+}
+.availability-people {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 12px 22px 0;
+}
+.availability-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  border: 1px solid #e4e6ed;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px 4px 4px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 650;
+}
+.availability-people > .availability-person:first-child {
+  padding: 6px 12px;
+}
+.availability-person.selected {
+  border-color: #5b54d9;
+  background: #f3f1ff;
+  color: #3f3aad;
+}
+.availability-person .avatar {
+  width: 28px;
+  height: 28px;
+  font-size: 11px;
+}
+.availability-person-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.availability-person-status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d0d5dd;
+}
+.availability-person.submitted .availability-person-status {
+  background: #5b54d9;
+}
 .availability-legend-swatch.busy {
   background:
     repeating-linear-gradient(
@@ -1164,13 +1215,17 @@ button.member-row-button:focus-visible {
   margin: 14px 22px 0;
 }
 .availability-best-times {
-  padding: 14px 22px 20px;
-  border-top: 1px solid #eef0f5;
+  padding: 14px 22px 0;
 }
 .availability-best-times h3 {
   margin: 0 0 8px;
   font-size: 14px;
   letter-spacing: -0.2px;
+}
+.availability-best-times p {
+  margin: 0;
+  color: #667085;
+  font-size: 13px;
 }
 .availability-best-times ul {
   margin: 0;
@@ -1323,6 +1378,36 @@ button.member-row-button:focus-visible {
 .slot.selected {
   background: #5b54d9;
   color: #fff;
+}
+.slot.heat-1:not(.selected):not(.past) {
+  background: #f4f2ff;
+}
+.slot.heat-2:not(.selected):not(.past) {
+  background: #ddd8ff;
+}
+.slot.heat-3:not(.selected):not(.past) {
+  background: #c4bdfc;
+  color: #2a2460;
+}
+.slot.heat-4:not(.selected):not(.past) {
+  background: #a79cf6;
+  color: #2a2460;
+}
+.slot.selected.heat-1,
+.slot.selected.heat-2,
+.slot.selected.heat-3,
+.slot.selected.heat-4 {
+  box-shadow: inset 0 0 0 2px #fff;
+}
+.slot.slot-muted {
+  opacity: 0.32;
+}
+.slot-count {
+  display: block;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1;
+  pointer-events: none;
 }
 .slot-range-label {
   display: block;

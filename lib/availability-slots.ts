@@ -227,7 +227,7 @@ export function isValidGridSlot(slot: string, timeZone: string) {
 }
 
 export function validateProposalSlots(slots: unknown, timeZone: string) {
-  if (!Array.isArray(slots) || slots.length === 0 || slots.length > 100) return null;
+  if (!Array.isArray(slots) || slots.length === 0 || slots.length > 7 * 24) return null;
   if (new Set(slots).size !== slots.length) return null;
   if (slots.some((s) => typeof s !== 'string' || !isValidGridSlot(s, timeZone))) return null;
   return slots as string[];
