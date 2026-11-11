@@ -2,7 +2,12 @@ const questions = [
   {
     question: 'What can my team organize in TeamUP?',
     answer:
-      'Create a shared project, break the work into tasks and milestones, and keep the team’s files and availability together.',
+      'Each project has a shared task list with owners, due dates, and progress, plus milestones, team availability, and project files. Members can see the same project plan and keep it current together.',
+  },
+  {
+    question: 'How does AI planning work?',
+    answer:
+      'If AI is connected for the workspace, you can provide an assignment brief and ask TeamUP to suggest tasks and milestones. Review and edit the suggestions before adding them to your project. You can also plan the project manually.',
   },
   {
     question: 'Can I try TeamUP before creating an account?',

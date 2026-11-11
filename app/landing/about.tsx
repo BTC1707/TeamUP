@@ -9,13 +9,15 @@ export function LandingAbout() {
         <div className='landing-about-copy'>
           <p className='landing-eyebrow'>ABOUT US</p>
 
-          <h2>Built for student project groups</h2>
+          <h2>Everything your project group needs to keep moving</h2>
 
           <p className='landing-about-body'>
-            Group projects are easier when everyone knows what needs to happen next. TeamUP gives
-            classmates one shared place to organize tasks, track milestones, coordinate availability,
-            and keep project files together. With AI-assisted planning to help teams get unstuck, TeamUP
-            makes it easier to stay organized and move forward together.
+            Start a project, invite classmates, and turn the assignment into a shared plan. Create
+            tasks with owners, due dates, and progress; group them under milestones so the team can
+            see what is coming up and what is complete. Teammates can add their availability to find
+            overlapping hours, and keep project files alongside the work. When you need a starting
+            point, optional AI planning can suggest tasks and milestones from an assignment brief.
+            Your team can review and edit the suggestions before adding them to the project.
           </p>
         </div>
 

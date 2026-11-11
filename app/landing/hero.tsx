@@ -13,11 +13,11 @@ export function LandingHero() {
           teamup<span>.</span>
         </p>
 
-        <h1>Your group, on the same page.</h1>
+        <h1>Plan group projects from first idea to final deadline.</h1>
 
         <p className='landing-lede'>
-          Plan tasks, find overlapping time, and keep assignment deadlines visible—without the
-          group-chat chaos.
+          TeamUP is a shared workspace for student teams. Turn an assignment into tasks, assign who
+          is doing what, track milestones, and find time to meet—all in one place.
         </p>
 
         <div className='landing-cta-row'>
