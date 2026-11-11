@@ -40,6 +40,7 @@ import {
   Download,
   Settings,
   ArrowRight,
+  CircleHelp,
   LockKeyhole,
   Send,
 } from 'lucide-react';
@@ -114,6 +115,73 @@ const nav = [
   ['Team', Users],
   ['Project settings', Settings],
 ] as const;
+const PAGE_HELP: Record<string, { description: string; tips: string[] }> = {
+  Overview: {
+    description: 'A snapshot of your project and the work that needs attention.',
+    tips: [
+      'Use the summary cards to jump to tasks, completed work, and milestones.',
+      'Review active tasks, team progress, and upcoming milestones in one place.',
+      'Use the AI planner to turn an assignment brief into suggested tasks when AI is connected.',
+    ],
+  },
+  'Assignment chat': {
+    description: 'Use AI to ask questions about your assignment or get a draft project plan.',
+    tips: [
+      'Share the assignment details or ask a question to get started.',
+      'Review and edit suggested tasks and milestones before adding them to the project.',
+      'AI features are available when the workspace has an AI provider connected.',
+    ],
+  },
+  'My tasks': {
+    description: 'See project tasks, their owners, due dates, and current status.',
+    tips: [
+      'Switch between active tasks and all tasks with the filters above the list.',
+      'Select a task to update its details or mark it complete.',
+      'Add a task to give the team a clear next action and an owner.',
+    ],
+  },
+  Milestones: {
+    description: 'Group work around the major checkpoints in your project.',
+    tips: [
+      'Give each milestone a name and target date.',
+      'Mark a milestone complete when the team reaches that checkpoint.',
+      'Connect tasks to milestones to show how day-to-day work fits the larger plan.',
+    ],
+  },
+  Availability: {
+    description: 'Share when you are free and find hours that overlap with your teammates.',
+    tips: [
+      'Select the hours when you are available in your calendar.',
+      'Switch to Overlap to see times when everyone with a saved schedule is free.',
+      'If Google Calendar is connected, preview busy and open hours, then choose how to update your availability.',
+      'Calendar sync updates availability only; it does not create a calendar event.',
+    ],
+  },
+  Files: {
+    description: 'Keep shared project documents and other files together for the team.',
+    tips: [
+      'Upload a file to make it available to project members.',
+      'Use the download link in the file list to retrieve a shared file.',
+      'Each upload can be up to 10 MB.',
+    ],
+  },
+  Team: {
+    description: 'See who is working on the project and manage project invitations.',
+    tips: [
+      'Check member task counts to see how work is distributed.',
+      'Project owners can invite teammates; invitees accept from their notifications or invitation link.',
+      'Use Project settings to find the project sharing controls.',
+    ],
+  },
+  'Project settings': {
+    description: 'Manage project details, sharing, and project level actions.',
+    tips: [
+      'Update the project name and deadline so the shared plan stays current.',
+      'Create an invitation link to bring teammates into the project.',
+      'Only the project owner can delete the project; deletion also removes its tasks, files, and conversations.',
+    ],
+  },
+};
 const initials = (name: string) =>
   name
     .split(' ')
@@ -392,6 +460,7 @@ export default function Workspace({
   const [showStartupNotice, setShowStartupNotice] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [pageHelpOpen, setPageHelpOpen] = useState(false);
   const [modal, setModal] = useState('');
   const [filter, setFilter] = useState('active');
   const [milestoneFilter, setMilestoneFilter] = useState('all');
@@ -2294,6 +2363,15 @@ export default function Workspace({
                 day: 'numeric',
               })}
             </span>
+            <button
+              type='button'
+              className='page-help-button'
+              aria-label={`Help for ${view}`}
+              title={`Help for ${view}`}
+              onClick={() => setPageHelpOpen(true)}
+            >
+              <CircleHelp size={20} aria-hidden='true' />
+            </button>
             <Popover
               open={notifOpen}
               onOpenChange={(open) => {
@@ -3575,6 +3653,19 @@ export default function Workspace({
           )}
         </div>
       </main>
+      <Dialog open={pageHelpOpen} onOpenChange={setPageHelpOpen}>
+        <DialogContent className='sm:max-w-[460px]'>
+          <DialogHeader>
+            <DialogTitle>How to use {view}</DialogTitle>
+            <DialogDescription>{PAGE_HELP[view]?.description}</DialogDescription>
+          </DialogHeader>
+          <ul className='page-help-tips'>
+            {(PAGE_HELP[view]?.tips || []).map((tip) => (
+              <li key={tip}>{tip}</li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
       <Dialog
         open={!!googleSyncPreview}
         onOpenChange={(open) => {
