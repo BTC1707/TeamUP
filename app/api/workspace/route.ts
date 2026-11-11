@@ -1,4 +1,6 @@
 import { aiConfigured, isSiteOwner } from '@/lib/ai-config';
+import { getSessionUser, refreshSessionCookieIfNeeded, requestIsSecure } from '@/lib/auth';
+import { emailConfigured } from '@/lib/email';
 import { identity, runtime, projectFor, failure, sameOrigin } from '@/lib/server';
 import {
   listProjects,
@@ -6,12 +8,20 @@ import {
   replaceRows,
   userKey,
   deleteProject,
+  leaveProject,
   cleanupFiles,
 } from '@/lib/store';
+import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
+import { avatarUrlFor } from '@/lib/avatar';
+import { availabilitySlotsError } from '@/lib/availability-calendar';
 import type { Project } from '@/lib/model';
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const u = await identity();
+    const session = await getSessionUser();
+    const refreshedCookie = session
+      ? await refreshSessionCookieIfNeeded(session, { secure: requestIsSecure(req) })
+      : null;
     const { DB } = runtime();
     await cleanupFiles(DB, runtime().BUCKET, u.userId);
     const profile = await DB.prepare(
@@ -19,25 +29,29 @@ export async function GET() {
     )
       .bind(u.userId)
       .first<any>();
-    return Response.json({
-      user: {
-        id: u.userId,
-        // Prefer username for local admin so the sidebar shows "admin".
-        name: profile.username || profile.name || u.displayName,
-        username: profile.username || '',
-        email: u.email,
-        address: profile.address || '',
-        phone: profile.phone || '',
-        language: profile.language,
-        timeZone: profile.time_zone,
-        notifications: !!profile.notifications,
-        tutorialSeen: !!profile.tutorial_seen,
+    return Response.json(
+      {
+        user: {
+          id: u.userId,
+          // Prefer username for local admin so the sidebar shows "admin".
+          name: profile.username || profile.name || u.displayName,
+          username: profile.username || '',
+          email: u.email,
+          address: profile.address || '',
+          phone: profile.phone || '',
+          language: profile.language,
+          timeZone: profile.time_zone,
+          notifications: !!profile.notifications,
+          tutorialSeen: !!profile.tutorial_seen,
+          avatarUrl: avatarUrlFor(u.userId, profile.avatar_key) || undefined,
+        },
+        projects: await listProjects(DB, u),
+        aiReady: await aiConfigured(),
+        canConfigureAI: isSiteOwner(u.email),
+        emailReady: emailConfigured(),
       },
-      projects: await listProjects(DB, u),
-      aiReady: await aiConfigured(),
-      canConfigureAI: isSiteOwner(u.email),
-      emailReady: false,
-    });
+      refreshedCookie ? { headers: { 'Set-Cookie': refreshedCookie } } : undefined,
+    );
   } catch (e) {
     return failure(e);
   }
@@ -100,6 +114,30 @@ export async function POST(req: Request) {
           u.userId,
         ),
       ]);
+      return Response.json({ ok: true });
+    }
+    if (body.action === 'leave') {
+      const id = String(body.id || '');
+      if (!id) return Response.json({ error: 'Choose a project to leave.' }, { status: 400 });
+      const current = await projectFor(id, u);
+      if (!Number.isInteger(body.version) || body.version !== current.version) throw new Error('CONFLICT');
+      const left = await leaveProject(DB, id, u);
+      if (left.ownerId) {
+        try {
+          await insertNotifications(DB, [
+            {
+              userId: left.ownerId,
+              projectId: id,
+              type: 'member_left',
+              title: 'Teammate left',
+              body: `${u.displayName} left ${left.projectName}. Their tasks are unassigned.`,
+              meta: { actorName: u.displayName, projectName: left.projectName },
+            },
+          ]);
+        } catch (error) {
+          console.error('Leave notification failed', error);
+        }
+      }
       return Response.json({ ok: true });
     }
     if (!['create', 'update'].includes(body.action))
@@ -195,7 +233,14 @@ export async function POST(req: Request) {
       return Response.json({ error: 'Each teammate needs a different email.' }, { status: 400 });
     const scope = (id: string) => (id.startsWith(p.id + ':') ? id : p.id + ':' + id);
     const ms = new Map(p.milestones.map((m) => [m.id, scope(m.id)]));
-    p.milestones = p.milestones.map((m) => ({ ...m, id: scope(m.id) }));
+    const previousPhotoKeys = new Map(
+      (previous?.milestones || []).map((m) => [m.id, m.photoKey || ''] as const),
+    );
+    p.milestones = p.milestones.map((m) => {
+      const id = scope(m.id);
+      const photoKey = previousPhotoKeys.get(id) || previousPhotoKeys.get(m.id) || m.photoKey;
+      return { ...m, id, ...(photoKey ? { photoKey } : { photoKey: undefined }) };
+    });
     for (const t of p.tasks) {
       t.id = scope(t.id);
       t.assignee = ids.get(t.assignee) || '';
@@ -204,19 +249,8 @@ export async function POST(req: Request) {
       t.milestone = ms.get(t.milestone) || '';
     }
     const slots = p.availability[u.userId] || [];
-    if (
-      !Array.isArray(slots) ||
-      slots.length > 100 ||
-      new Set(slots).size !== slots.length ||
-      slots.some(
-        (s: unknown) =>
-          typeof s !== 'string' ||
-          !Number.isFinite(Date.parse(s)) ||
-          (!previous?.availability[u.userId]?.includes(s as string) &&
-            Date.parse(s as string) < Date.now()),
-      )
-    )
-      return Response.json({ error: 'Choose future availability times.' }, { status: 400 });
+    const slotError = availabilitySlotsError(slots, previous?.availability[u.userId] || []);
+    if (slotError) return Response.json({ error: slotError }, { status: 400 });
     p.availability = { ...(previous?.availability || {}), [u.userId]: slots };
     const token = crypto.randomUUID();
     const group = p.groupId!;
@@ -257,7 +291,19 @@ export async function POST(req: Request) {
     stmts.push(...replaceRows(DB, p, group, owner, token, create || owner === u.userId, u.userId));
     const results = await DB.batch(stmts);
     if (!create && !results[0].meta.changes) throw new Error('CONFLICT');
-    return Response.json({ project: await readProject(DB, p.id) });
+    const saved = await readProject(DB, p.id);
+    try {
+      const activity = taskActivityNotifications(
+        previous || null,
+        saved,
+        u.userId,
+        u.displayName,
+      );
+      if (activity.length) await insertNotifications(DB, activity);
+    } catch (error) {
+      console.error('Project activity notifications failed', error);
+    }
+    return Response.json({ project: saved });
   } catch (e) {
     return failure(e);
   }

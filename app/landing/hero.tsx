@@ -1,13 +1,11 @@
 import { ChevronDown } from 'lucide-react';
 import { LANDING_ROUTES } from './routes';
+import DemoLink from '../demo-link';
 
 /** First screen: brand, headline, and main buttons. */
 export function LandingHero() {
   return (
     <section className='landing-hero'>
-      <nav className='landing-nav' aria-label='Main navigation'>
-        <a href='#about'>About Us</a>
-      </nav>
       <div className='landing-hero-copy'>
         <p className='landing-brand'>
           teamup<span>.</span>
@@ -21,7 +19,6 @@ export function LandingHero() {
         </p>
 
         <div className='landing-cta-row'>
-          {/* Working — creates an account via /signup */}
           <a className='btn primary' href={LANDING_ROUTES.signUp}>
             Sign up
           </a>
@@ -30,9 +27,7 @@ export function LandingHero() {
             Sign in
           </a>
 
-          <a className='btn subtle' href={LANDING_ROUTES.demo}>
-            Try demo
-          </a>
+          <DemoLink className='btn subtle'>Try demo</DemoLink>
         </div>
       </div>
 

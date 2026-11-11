@@ -8,9 +8,10 @@
 
 import {
   createSessionToken,
+  requestIsSecure,
   safeReturnPath,
-  sessionCookieHeader,
   validateSignIn,
+  writeSessionCookie,
 } from '@/lib/auth';
 import {
   isLocalDevHost,
@@ -32,6 +33,7 @@ export async function POST(req: Request) {
       email?: string;
       username?: string;
       password?: string;
+      remember?: boolean;
       returnTo?: string;
     };
 
@@ -41,6 +43,8 @@ export async function POST(req: Request) {
       (typeof body.username === 'string' && body.username) ||
       '';
     const rawPassword = typeof body.password === 'string' ? body.password : '';
+    const remember = body.remember !== false;
+    const secure = requestIsSecure(req);
 
     // Localhost-only test account → blank workspace on the local DB, not production.
     if (isLocalDevHost(req) && matchesLocalDevAccount(rawLogin, rawPassword)) {
@@ -55,11 +59,13 @@ export async function POST(req: Request) {
         passwordHash,
       });
 
-      const token = await createSessionToken(LOCAL_DEV_ACCOUNT.email, LOCAL_DEV_ACCOUNT.name);
-      const secure = new URL(req.url).protocol === 'https:';
+      const token = await createSessionToken(LOCAL_DEV_ACCOUNT.email, LOCAL_DEV_ACCOUNT.name, {
+        remember,
+      });
+      const cookie = await writeSessionCookie(token, { remember, secure });
       return Response.json(
         { ok: true, returnTo: safeReturnPath(body.returnTo) },
-        { headers: { 'Set-Cookie': sessionCookieHeader(token, secure) } },
+        { headers: { 'Set-Cookie': cookie } },
       );
     }
 
@@ -92,16 +98,12 @@ export async function POST(req: Request) {
       return Response.json({ error: INVALID }, { status: 401 });
     }
 
-    const token = await createSessionToken(user.email, user.name);
-    const secure = new URL(req.url).protocol === 'https:';
+    const token = await createSessionToken(user.email, user.name, { remember });
+    const cookie = await writeSessionCookie(token, { remember, secure });
 
     return Response.json(
       { ok: true, returnTo: safeReturnPath(body.returnTo) },
-      {
-        headers: {
-          'Set-Cookie': sessionCookieHeader(token, secure),
-        },
-      },
+      { headers: { 'Set-Cookie': cookie } },
     );
   } catch {
     return Response.json({ error: 'Unable to sign in. Please try again.' }, { status: 500 });

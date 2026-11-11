@@ -10,9 +10,9 @@ export const runtime = () =>
     AI_CONFIG_ENCRYPTION_KEY?: string;
     SITE_OWNER_EMAIL?: string;
     AUTH_SECRET?: string;
-    VAPID_SUBJECT?: string;
-    VAPID_SERVER_PUBLIC_KEY?: string;
-    VAPID_SERVER_PRIVATE_KEY?: string;
+    RESEND_API_KEY?: string;
+    EMAIL_FROM?: string;
+    GOOGLE_CALENDAR_CLIENT_ID?: string;
   };
 
 export async function identity() {
@@ -47,7 +47,9 @@ export function failure(e: unknown) {
             ? 'Project not found or access denied.'
             : message === 'CONFLICT'
               ? 'A teammate updated this project. Reload before saving again.'
-              : 'Unable to complete this request. Please try again.',
+              : message === 'LEAVE_OWNER'
+                ? 'Project owners can’t leave. Delete the project if the team is finished.'
+                : 'Unable to complete this request. Please try again.',
     },
     {
       status:
@@ -57,7 +59,9 @@ export function failure(e: unknown) {
             ? 404
             : message === 'CONFLICT'
               ? 409
-              : 500,
+              : message === 'LEAVE_OWNER'
+                ? 400
+                : 500,
     },
   );
 }

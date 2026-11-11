@@ -1,9 +1,9 @@
 /**
- * Route: `/demo` → same workspace UI, but in guest/demo mode (no account).
+ * Legacy route: `/demo` → the Overview in guest/demo mode (no account).
  * Linked from the landing page “Try demo” button.
  */
-import Workspace from '../workspace';
+import { redirect } from 'next/navigation';
 
 export default function DemoPage() {
-  return <Workspace demoMode />;
+  redirect('/demo/overview');
 }

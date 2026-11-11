@@ -11,12 +11,11 @@
  *   /           → this landing page
  *   /signup     → create account (working)
  *   /signin     → sign in (working)
- *   /workspace  → main app after auth
- *   /demo       → try the app without an account
+ *   /workspace/overview → main app after auth
+ *   /demo/overview      → try the app without an account
  */
 
 import { LandingAbout } from './landing/about';
-import { LandingFooter } from './landing/footer';
 import { LandingFaq } from './landing/faq';
 import { LandingGettingStarted } from './landing/getting-started';
 import { LandingHero } from './landing/hero';
@@ -28,7 +27,6 @@ export default function Landing() {
       <LandingAbout />
       <LandingGettingStarted />
       <LandingFaq />
-      <LandingFooter />
     </main>
   );
 }

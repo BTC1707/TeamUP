@@ -23,6 +23,8 @@ export const users = sqliteTable(
     passwordHash: text('password_hash'),
     address: text('address'),
     phone: text('phone'),
+    /** R2 object key for profile photo; null when using initials. */
+    avatarKey: text('avatar_key'),
   },
   (t) => [
     uniqueIndex('users_email').on(t.email),
@@ -44,6 +46,8 @@ export const groupMembers = sqliteTable(
       .notNull()
       .references(() => users.id),
     role: text('role').notNull().default('member'),
+    /** Unique calendar color for this person on the project. */
+    color: text('color'),
   },
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user').on(t.userId)],
 );
@@ -56,20 +60,6 @@ export const settings = sqliteTable('settings', {
   timeZone: text('time_zone').notNull().default('UTC'),
   notifications: integer('notifications', { mode: 'boolean' }).notNull().default(true),
 });
-export const pushSubscriptions = sqliteTable(
-  'push_subscriptions',
-  {
-    id: text('id').primaryKey(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => users.id),
-    endpoint: text('endpoint').notNull(),
-    p256dh: text('p256dh').notNull(),
-    authSecret: text('auth_secret').notNull(),
-    createdAt: text('created_at').notNull(),
-  },
-  (t) => [uniqueIndex('push_subscription_user_endpoint').on(t.userId, t.endpoint)],
-);
 // data is retained as a read-only legacy migration backup, never used for normalized saves.
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(),
@@ -84,6 +74,8 @@ export const projects = sqliteTable('projects', {
   reminderHours: integer('reminder_hours').notNull().default(24),
   normalized: integer('normalized').notNull().default(0),
   writeToken: text('write_token'),
+  /** R2 object key for project cover photo. */
+  photoKey: text('photo_key'),
 });
 export const milestones = sqliteTable(
   'milestones',
@@ -96,6 +88,8 @@ export const milestones = sqliteTable(
     description: text('description').notNull().default(''),
     dueDate: text('due_date').notNull(),
     status: text('status').notNull().default('todo'),
+    /** R2 object key for milestone photo. */
+    photoKey: text('photo_key'),
   },
   (t) => [uniqueIndex('milestone_project_id').on(t.projectId, t.id)],
 );
@@ -216,6 +210,24 @@ export const aiConfig = sqliteTable('ai_config', {
   sealedKey: text('sealed_key').notNull(),
   updated: text('updated').notNull(),
 });
+export const projectMemberInvites = sqliteTable(
+  'project_member_invites',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id),
+    inviterId: text('inviter_id')
+      .notNull()
+      .references(() => users.id),
+    inviteeId: text('invitee_id')
+      .notNull()
+      .references(() => users.id),
+    status: text('status').notNull().default('pending'),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [uniqueIndex('member_invite_project_user').on(t.projectId, t.inviteeId)],
+);
 export const projectInvites = sqliteTable(
   'project_invites',
   {
@@ -237,3 +249,37 @@ export const fileCleanup = sqliteTable('file_cleanup', {
     .notNull()
     .references(() => users.id),
 });
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    projectId: text('project_id'),
+    type: text('type').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    read: integer('read', { mode: 'boolean' }).notNull().default(false),
+    createdAt: text('created_at').notNull(),
+    meta: text('meta').notNull().default('{}'),
+  },
+  (t) => [index('notification_user_created').on(t.userId, t.createdAt)],
+);
+export const passwordResetTokens = sqliteTable(
+  'password_reset_tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    tokenHash: text('token_hash').notNull(),
+    createdAt: text('created_at').notNull(),
+    expiresAt: integer('expires_at').notNull(),
+    usedAt: text('used_at'),
+  },
+  (t) => [
+    uniqueIndex('password_reset_token_hash').on(t.tokenHash),
+    index('password_reset_user').on(t.userId),
+  ],
+);

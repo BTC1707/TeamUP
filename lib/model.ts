@@ -1,4 +1,11 @@
-export type Member = { id: string; name: string; email: string };
+export type Member = {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  /** Stable calendar color, unique among people on this project. */
+  color?: string;
+};
 export type Task = {
   id: string;
   title: string;
@@ -14,6 +21,9 @@ export type Milestone = {
   description?: string;
   due: string;
   done: boolean;
+  photoUrl?: string;
+  /** Server-side R2 key; preserved across workspace saves. */
+  photoKey?: string;
 };
 export type Project = {
   id: string;
@@ -29,6 +39,8 @@ export type Project = {
   version: number;
   owner?: string;
   groupId?: string;
+  photoUrl?: string;
+  photoKey?: string;
 };
 export const future = (days: number) => {
   const d = new Date();

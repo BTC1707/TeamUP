@@ -11,7 +11,7 @@ import {
   rememberLocalAdminSession,
 } from './local-dev-account';
 
-export const DEFAULT_AFTER_AUTH_PATH = '/workspace';
+export const DEFAULT_AFTER_AUTH_PATH = '/workspace/overview';
 
 type AuthResult = {
   returnTo: string;
@@ -37,6 +37,7 @@ export async function signUpAccount(input: {
 }): Promise<AuthResult> {
   const response = await fetch('/api/auth/signup', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       firstName: input.firstName,
@@ -55,14 +56,17 @@ export async function signUpAccount(input: {
 export async function signInAccount(input: {
   login: string;
   password: string;
+  remember?: boolean;
   returnTo?: string;
 }): Promise<AuthResult> {
   const response = await fetch('/api/auth/signin', {
     method: 'POST',
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       login: input.login,
       password: input.password,
+      remember: input.remember !== false,
       returnTo: input.returnTo || DEFAULT_AFTER_AUTH_PATH,
     }),
   });
@@ -75,6 +79,41 @@ export async function signInAccount(input: {
     clearLocalAdminSession();
   }
   return result;
+}
+
+/** Request a password-reset email. */
+export async function requestPasswordResetEmail(email: string): Promise<{ message: string }> {
+  const response = await fetch('/api/auth/forgot-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  const data: { error?: string; message?: string } = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Unable to start a password reset. Please try again.');
+  }
+  return {
+    message:
+      data.message ||
+      'If an account exists for that email, a reset link is on its way. Check your inbox.',
+  };
+}
+
+/** Set a new password with a reset token from email. */
+export async function resetAccountPassword(input: {
+  token: string;
+  password: string;
+  confirmPassword: string;
+}): Promise<void> {
+  const response = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  const data: { error?: string } = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error || 'Unable to reset your password. Please try again.');
+  }
 }
 
 /** Read ?return_to= from the current URL, falling back to the workspace. */

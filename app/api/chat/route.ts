@@ -6,7 +6,7 @@ import {
   classifyChatIntent,
   type AIMessage,
 } from '@/lib/ai';
-import { conversation, readMessages } from '@/lib/conversations';
+import { clearMessages, conversation, readMessages } from '@/lib/conversations';
 import { readProject, replaceRows } from '@/lib/store';
 import {
   rangesToProposal,
@@ -302,7 +302,8 @@ type ChatAction =
   | 'confirmBrief'
   | 'cancelBrief'
   | 'confirmReminders'
-  | 'cancelReminders';
+  | 'cancelReminders'
+  | 'clearHistory';
 
 export async function GET(req: Request) {
   try {
@@ -364,6 +365,14 @@ export async function POST(req: Request) {
       cancelBrief: 'Okay — I didn’t change the assignment brief.',
       cancelReminders: 'Okay — I didn’t change reminder timing.',
     };
+
+    if (body.action === 'clearHistory') {
+      const project = await projectFor(body.project, u);
+      const { DB } = runtime();
+      chatId = await conversation(DB, project.id, u);
+      await clearMessages(DB, chatId);
+      return Response.json({ messages: [], pendingProposal: null });
+    }
 
     if (body.action && cancelMessages[body.action]) {
       const project = await projectFor(body.project, u);

@@ -1,7 +1,8 @@
 import { geminiKey } from '@/lib/ai-config';
-import { runtime } from '@/lib/server';
+import { readableProjectDocuments, type GeminiPart } from '@/lib/plan-documents';
 import type { Project } from '@/lib/model';
 export type AIMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+export type AIContentPart = GeminiPart;
 export class AIError extends Error {
   constructor(
     message: string,
@@ -11,19 +12,16 @@ export class AIError extends Error {
   }
 }
 export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
-export async function complete(messages: AIMessage[], json = false, providedKey?: string) {
+
+async function generateGemini(
+  system: string,
+  contents: { role: 'user' | 'model'; parts: GeminiPart[] }[],
+  json: boolean,
+  providedKey?: string,
+  timeoutMs = 90000,
+) {
   const key = providedKey || (await geminiKey());
   if (!key) throw new AIError('Connect Gemini in your account settings to start using AI.', 503);
-  const system = messages
-    .filter((m) => m.role === 'system')
-    .map((m) => m.content)
-    .join('\n');
-  const contents: { role: 'user' | 'model'; parts: { text: string }[] }[] = [];
-  for (const message of messages.filter((m) => m.role !== 'system')) {
-    const role = message.role === 'assistant' ? 'model' : 'user';
-    if (contents.at(-1)?.role === role) contents.at(-1)!.parts.push({ text: message.content });
-    else contents.push({ role, parts: [{ text: message.content }] });
-  }
   let response: Response;
   try {
     response = await fetch(
@@ -32,7 +30,7 @@ export async function complete(messages: AIMessage[], json = false, providedKey?
         ':generateContent',
       {
         method: 'POST',
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(timeoutMs),
         headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system || 'Be helpful and concise.' }] },
@@ -85,6 +83,30 @@ export async function complete(messages: AIMessage[], json = false, providedKey?
     .join('');
   if (!answer) throw new AIError('Gemini could not answer this question. Try rephrasing it.');
   return answer;
+}
+
+export async function complete(messages: AIMessage[], json = false, providedKey?: string) {
+  const system = messages
+    .filter((m) => m.role === 'system')
+    .map((m) => m.content)
+    .join('\n');
+  const contents: { role: 'user' | 'model'; parts: GeminiPart[] }[] = [];
+  for (const message of messages.filter((m) => m.role !== 'system')) {
+    const role = message.role === 'assistant' ? 'model' : 'user';
+    if (contents.at(-1)?.role === role) contents.at(-1)!.parts.push({ text: message.content });
+    else contents.push({ role, parts: [{ text: message.content }] });
+  }
+  return generateGemini(system, contents, json, providedKey);
+}
+
+/** Multimodal generate (text + inline PDF/images). */
+export async function completeWithParts(
+  system: string,
+  userParts: GeminiPart[],
+  json = false,
+  providedKey?: string,
+) {
+  return generateGemini(system, [{ role: 'user', parts: userParts }], json, providedKey, 120000);
 }
 export type ChatIntent = {
   intent:
@@ -246,21 +268,11 @@ export async function classifyAvailabilityIntent(
   });
 }
 
-export async function assignmentContext(project: Project) {
-  const { DB, BUCKET } = runtime();
-  const result = await DB.prepare(
-    'SELECT id,name,size,type,storage_key FROM files WHERE project_id=? ORDER BY created DESC LIMIT 20',
-  )
-    .bind(project.id)
-    .all<{ id: string; name: string; size: number; type: string; storage_key: string | null }>();
-  const readable = result.results
-    .filter((f) => (/\.(txt|md|csv)$/i.test(f.name) || f.type === 'text/plain') && f.size <= 100000)
-    .slice(0, 3);
-  const documents = [];
-  for (const file of readable) {
-    const object = await BUCKET.get(file.storage_key || file.id);
-    if (object) documents.push({ name: file.name, text: (await object.text()).slice(0, 10000) });
-  }
+export function assignmentContextFromSnapshot(
+  project: Project,
+  documents: { name: string; text: string }[] = [],
+  otherFiles: string[] = [],
+) {
   return {
     project: {
       name: project.name,
@@ -272,6 +284,11 @@ export async function assignmentContext(project: Project) {
       milestones: project.milestones,
     },
     documents,
-    otherFiles: result.results.filter((f) => !readable.includes(f)).map((f) => f.name),
+    otherFiles,
   };
+}
+
+export async function assignmentContext(project: Project) {
+  const { documents, otherFiles } = await readableProjectDocuments(project.id, 3);
+  return assignmentContextFromSnapshot(project, documents, otherFiles);
 }

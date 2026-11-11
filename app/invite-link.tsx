@@ -1,111 +1,257 @@
 'use client';
+
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+
+function initials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0] || '')
+      .join('')
+      .toUpperCase() || '–'
+  );
+}
+
+function SearchAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setFailed(false);
+  }, [avatarUrl]);
+  if (avatarUrl && !failed) {
+    return (
+      <span className='avatar'>
+        <img src={avatarUrl} alt='' onError={() => setFailed(true)} />
+      </span>
+    );
+  }
+  return <span className='avatar'>{initials(name)}</span>;
+}
+
+type Person = {
+  id: string;
+  name: string;
+  username: string;
+  email: string;
+  avatarUrl?: string;
+  alreadyMember?: boolean;
+};
+
 export default function InviteLink({ project }: { project: string }) {
+  const [query, setQuery] = useState('');
+  const [people, setPeople] = useState<Person[]>([]);
+  const [projectName, setProjectName] = useState('this project');
+  const [searching, setSearching] = useState(false);
+  const [invitingId, setInvitingId] = useState('');
   const [url, setUrl] = useState('');
   const [expires, setExpires] = useState<number | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [linkBusy, setLinkBusy] = useState(false);
   const [error, setError] = useState('');
-  async function request(action: string) {
-    const r = await fetch('/api/invites', {
+
+  async function request(action: string, extra: Record<string, string> = {}) {
+    const response = await fetch('/api/invites', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, project }),
+      body: JSON.stringify({ action, project, ...extra }),
     });
-    const d: any = await r.json();
-    if (!r.ok) throw new Error(d.error);
-    return d;
+    const data: any = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Could not update invites.');
+    return data;
   }
+
   useEffect(() => {
     let active = true;
     request('status')
-      .then((d) => {
-        if (active) setExpires(d.expiresAt);
+      .then((data) => {
+        if (active) setExpires(data.expiresAt);
       })
-      .catch((e) => {
-        if (active) setError(e.message);
+      .catch(() => {
+        // A missing link is fine; creating one still works.
       });
     return () => {
       active = false;
     };
   }, [project]);
-  async function create() {
-    setBusy(true);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      setPeople([]);
+      setSearching(false);
+      return;
+    }
+    let active = true;
+    setSearching(true);
+    const timer = window.setTimeout(() => {
+      request('search', { query: trimmed })
+        .then((data) => {
+          if (!active) return;
+          setPeople(Array.isArray(data.people) ? data.people : []);
+          if (typeof data.projectName === 'string' && data.projectName.trim()) {
+            setProjectName(data.projectName.trim());
+          }
+        })
+        .catch((searchError) => {
+          if (active) setError((searchError as Error).message);
+        })
+        .finally(() => {
+          if (active) setSearching(false);
+        });
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [project, query]);
+
+  async function invite(person: Person) {
+    setInvitingId(person.id);
     setError('');
     try {
-      const d = await request('create');
-      setUrl(window.location.origin + '/join#' + d.token);
-      setExpires(d.expiresAt);
-    } catch (e) {
-      setError((e as Error).message);
+      await request('invite', { userId: person.id });
+      setPeople((current) => current.filter((entry) => entry.id !== person.id));
+      setQuery('');
+      toast.success(`Invite sent to ${person.name}.`);
+    } catch (inviteError) {
+      const message = (inviteError as Error).message;
+      setError(message);
+      toast.error(message);
     } finally {
-      setBusy(false);
+      setInvitingId('');
     }
   }
+
+  async function create() {
+    setLinkBusy(true);
+    setError('');
+    try {
+      const data = await request('create');
+      setUrl(`${window.location.origin}/join#${data.token}`);
+      setExpires(data.expiresAt);
+    } catch (createError) {
+      setError((createError as Error).message);
+    } finally {
+      setLinkBusy(false);
+    }
+  }
+
   return (
     <section className='panel invite-panel'>
       <div>
         <h2>Invite teammates</h2>
         <p className='subtext'>
-          Anyone with this link can sign in and join this project. Share it only with your
-          teammates.
+          Search by name, email, or username. They get a notification and can accept or decline.
         </p>
       </div>
-      {error && <p className='error'>{error}</p>}
-      {url && (
-        <label className='invite-url'>
-          Invitation link
-          <input readOnly value={url} onFocus={(e) => e.target.select()} />
-        </label>
+      {error ? <p className='error'>{error}</p> : null}
+      <label>
+        Find a teammate
+        <input
+          id='invite-search'
+          value={query}
+          maxLength={80}
+          placeholder='Name, email, or username'
+          autoComplete='off'
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      {query.trim().length >= 2 ? (
+        <div className='invite-results'>
+          {searching ? <p className='form-note'>Searching…</p> : null}
+          {!searching && people.length === 0 ? (
+            <p className='form-note'>No TeamUP account matches that name, email, or username.</p>
+          ) : null}
+          {people.map((person) => (
+            <div className='invite-result' key={person.id}>
+              <div className='invite-result-person'>
+                <SearchAvatar name={person.name} avatarUrl={person.avatarUrl} />
+                <div>
+                  <strong>{person.name}</strong>
+                  <small className={person.alreadyMember ? 'block invite-result-member' : 'block'}>
+                    {person.alreadyMember
+                      ? `${person.name} is already a member of ${projectName}.`
+                      : `${person.username ? `@${person.username} · ` : ''}${person.email}`}
+                  </small>
+                </div>
+              </div>
+              {person.alreadyMember ? null : (
+                <button
+                  type='button'
+                  className='btn primary'
+                  disabled={invitingId === person.id}
+                  onClick={() => void invite(person)}
+                >
+                  {invitingId === person.id ? 'Inviting…' : 'Invite'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className='form-note'>Type at least 2 characters.</p>
       )}
-      <div className='flex flex-wrap gap-3'>
-        {url && (
-          <button
-            className='btn primary'
-            onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(url);
-                toast.success('Invitation link copied.');
-              } catch {
-                setError('Select the link above and copy it manually.');
-              }
-            }}
-          >
-            Copy invite link
+
+      <div className='invite-link-fallback'>
+        <p className='form-note'>Or share a link. Anyone with the link can sign in and join.</p>
+        {url ? (
+          <label className='invite-url'>
+            Invitation link
+            <input readOnly value={url} onFocus={(event) => event.target.select()} />
+          </label>
+        ) : null}
+        <div className='flex flex-wrap gap-3'>
+          {url ? (
+            <button
+              className='btn primary'
+              type='button'
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(url);
+                  toast.success('Invitation link copied.');
+                } catch {
+                  setError('Select the link above and copy it manually.');
+                }
+              }}
+            >
+              Copy invite link
+            </button>
+          ) : null}
+          <button className='btn' type='button' disabled={linkBusy} onClick={() => void create()}>
+            {linkBusy ? 'Creating…' : expires ? 'Replace invite link' : 'Create invite link'}
           </button>
-        )}
-        <button className='btn' disabled={busy} onClick={create}>
-          {busy ? 'Updating…' : expires ? 'Replace invite link' : 'Create invite link'}
-        </button>
-        {expires && (
-          <button
-            className='btn subtle'
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await request('revoke');
-                setUrl('');
-                setExpires(null);
-                setError('');
-                toast.success('Invitation link revoked.');
-              } catch (e) {
-                setError((e as Error).message);
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            Revoke link
-          </button>
-        )}
+          {expires ? (
+            <button
+              className='btn subtle'
+              type='button'
+              disabled={linkBusy}
+              onClick={async () => {
+                setLinkBusy(true);
+                try {
+                  await request('revoke');
+                  setUrl('');
+                  setExpires(null);
+                  setError('');
+                  toast.success('Invitation link revoked.');
+                } catch (revokeError) {
+                  setError((revokeError as Error).message);
+                } finally {
+                  setLinkBusy(false);
+                }
+              }}
+            >
+              Revoke link
+            </button>
+          ) : null}
+        </div>
+        {expires ? (
+          <small>
+            Expires {new Date(expires).toLocaleString()}. Replacing the link disables the previous
+            one. Revoking a link does not remove teammates who already joined.
+          </small>
+        ) : null}
       </div>
-      {expires && (
-        <small>
-          Expires {new Date(expires).toLocaleString()}. Replacing the link disables the previous
-          one. Revoking a link does not remove teammates who already joined.
-        </small>
-      )}
     </section>
   );
 }
