@@ -46,6 +46,8 @@ export const groupMembers = sqliteTable(
       .notNull()
       .references(() => users.id),
     role: text('role').notNull().default('member'),
+    /** Unique calendar color for this person on the project. */
+    color: text('color'),
   },
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user').on(t.userId)],
 );

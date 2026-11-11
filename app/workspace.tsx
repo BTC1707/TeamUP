@@ -69,7 +69,7 @@ import {
   AVAILABILITY_HOUR_MIN,
   applyBlockBusyHours,
   applySuggestOpenHours,
-  availabilityMemberColor,
+  assignMemberColors,
   bestTeamRanges,
   classifyGoogleSlots,
   countSlotsOutsideDefaultBand,
@@ -579,16 +579,16 @@ export default function Workspace({
       selected: myAvailabilitySet,
     }),
   );
-  let teammateColorIndex = 0;
-  const memberAvailability = project.members.map((member) => {
+  const memberAvailability = assignMemberColors(project.members).map((member) => {
     const self = member.id === me;
     return {
       member,
       self,
-      color: self ? '#5b54d9' : availabilityMemberColor(teammateColorIndex++),
+      color: member.color || '#0f766e',
       slots: self ? myAvailabilitySet : new Set(project.availability[member.id] || []),
     };
   });
+  const selfColor = memberAvailability.find((entry) => entry.self)?.color || '#0f766e';
   const submittedSchedules = memberAvailability.filter((entry) => entry.slots.size > 0).length;
   const availabilityCountAt = (slotKey: string) =>
     memberAvailability.reduce((count, entry) => count + (entry.slots.has(slotKey) ? 1 : 0), 0);
@@ -2990,7 +2990,11 @@ export default function Workspace({
 
               <div className='availability-legend' aria-label='Calendar legend'>
                 <span>
-                  <i className='availability-legend-swatch available' aria-hidden='true' />
+                  <i
+                    className='availability-legend-swatch available'
+                    style={{ background: selfColor, borderColor: selfColor }}
+                    aria-hidden='true'
+                  />
                   Your hours
                 </span>
                 <span>
@@ -3174,7 +3178,13 @@ export default function Workspace({
                             aria-pressed={selected}
                             disabled={past}
                             title={past ? 'Time has passed' : showBusy ? 'Busy' : freeLabel}
-                            style={!showSelf && teamBackground ? { background: teamBackground } : undefined}
+                            style={
+                              showSelf
+                                ? { background: selfColor }
+                                : teamBackground
+                                  ? { background: teamBackground }
+                                  : undefined
+                            }
                             className={
                               'slot' +
                               (showSelf ? ' selected' : '') +

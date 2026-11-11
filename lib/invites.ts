@@ -1,5 +1,6 @@
 import type { Actor } from './store';
 import { getProject } from './store';
+import { nextMemberColor } from '@/lib/availability-calendar';
 import { emailConfigured, inviteEmailContent, sendEmail } from '@/lib/email';
 import { insertNotifications } from '@/lib/notifications';
 import { avatarUrlFor } from '@/lib/avatar';
@@ -73,6 +74,7 @@ export async function acceptInvite(db: D1Database, token: string, u: Actor) {
   if (p.alreadyMember) return { projectId: p.projectId };
   const hash = await hashInvite(token);
   const now = Date.now();
+  const color = await unusedGroupColor(db, p.groupId);
   const allowed = `EXISTS(SELECT 1 FROM project_invites WHERE project_id=? AND token_hash=? AND expires_at>?) AND (SELECT count(*) FROM group_members WHERE group_id=?)<30`;
   const results = await db.batch([
     db
@@ -82,9 +84,9 @@ export async function acceptInvite(db: D1Database, token: string, u: Actor) {
       .bind(p.projectId, p.projectId, hash, now, p.groupId, p.groupId, u.userId),
     db
       .prepare(
-        `INSERT OR IGNORE INTO group_members(group_id,user_id,role) SELECT ?,?,'member' WHERE ${allowed}`,
+        `INSERT OR IGNORE INTO group_members(group_id,user_id,role,color) SELECT ?,?,'member',? WHERE ${allowed}`,
       )
-      .bind(p.groupId, u.userId, p.projectId, hash, now, p.groupId),
+      .bind(p.groupId, u.userId, color, p.projectId, hash, now, p.groupId),
   ]);
   if (!results[1].meta.changes) {
     const member = await db
@@ -94,6 +96,13 @@ export async function acceptInvite(db: D1Database, token: string, u: Actor) {
     if (!member) throw new Error('INVITE_UNAVAILABLE');
   }
   return { projectId: p.projectId };
+}
+async function unusedGroupColor(db: D1Database, groupId: string) {
+  const rows = await db
+    .prepare('SELECT color FROM group_members WHERE group_id=?')
+    .bind(groupId)
+    .all<{ color: string | null }>();
+  return nextMemberColor(rows.results.map((row) => row.color));
 }
 function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
@@ -229,6 +238,7 @@ export async function respondToMemberInvite(
     return { status: 'rejected', projectId: invite.project_id };
   }
 
+  const color = await unusedGroupColor(db, invite.group_id);
   const accepted = await db
     .prepare(
       `UPDATE project_member_invites SET status='accepted' WHERE id=? AND status='pending' AND (SELECT count(*) FROM group_members WHERE group_id=?)<30`,
@@ -238,9 +248,9 @@ export async function respondToMemberInvite(
   if (!accepted.meta.changes) throw new Error('INVITE_UNAVAILABLE');
   await db
     .prepare(
-      `INSERT OR IGNORE INTO group_members(group_id,user_id,role) VALUES(?,?,'member')`,
+      `INSERT OR IGNORE INTO group_members(group_id,user_id,role,color) VALUES(?,?,'member',?)`,
     )
-    .bind(invite.group_id, u.userId)
+    .bind(invite.group_id, u.userId, color)
     .run();
   await insertNotifications(db, [
     {

@@ -1,4 +1,11 @@
-export type Member = { id: string; name: string; email: string; avatarUrl?: string };
+export type Member = {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl?: string;
+  /** Stable calendar color, unique among people on this project. */
+  color?: string;
+};
 export type Task = {
   id: string;
   title: string;

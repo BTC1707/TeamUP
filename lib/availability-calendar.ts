@@ -35,7 +35,7 @@ export function availabilityHeat(count: number) {
   return 4;
 }
 
-/** Stable colors for teammates on the week grid. Your hours stay the app purple. */
+/** First colors given to people on a project. Later members get further distinct hues. */
 export const AVAILABILITY_MEMBER_COLORS = [
   '#0f766e',
   '#c2410c',
@@ -47,8 +47,63 @@ export const AVAILABILITY_MEMBER_COLORS = [
   '#7c3aed',
 ];
 
+export function canonicalMemberColor(value: unknown) {
+  if (typeof value !== 'string') return '';
+  const match = /^#([0-9a-f]{6})$/i.exec(value.trim());
+  return match ? `#${match[1].toLowerCase()}` : '';
+}
+
+function hslToHex(hue: number, saturation: number, lightness: number) {
+  const s = saturation / 100;
+  const l = lightness / 100;
+  const chroma = (1 - Math.abs(2 * l - 1)) * s;
+  const section = hue / 60;
+  const x = chroma * (1 - Math.abs((section % 2) - 1));
+  const match = l - chroma / 2;
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  if (section < 1) [red, green, blue] = [chroma, x, 0];
+  else if (section < 2) [red, green, blue] = [x, chroma, 0];
+  else if (section < 3) [red, green, blue] = [0, chroma, x];
+  else if (section < 4) [red, green, blue] = [0, x, chroma];
+  else if (section < 5) [red, green, blue] = [x, 0, chroma];
+  else [red, green, blue] = [chroma, 0, x];
+  const channel = (value: number) =>
+    Math.round((value + match) * 255)
+      .toString(16)
+      .padStart(2, '0');
+  return `#${channel(red)}${channel(green)}${channel(blue)}`;
+}
+
+/** A distinct color for member index. Indexes past the palette do not reuse earlier colors. */
 export function availabilityMemberColor(index: number) {
-  return AVAILABILITY_MEMBER_COLORS[index % AVAILABILITY_MEMBER_COLORS.length];
+  if (index < AVAILABILITY_MEMBER_COLORS.length) return AVAILABILITY_MEMBER_COLORS[index];
+  return hslToHex((index * 47) % 360, 62, 34);
+}
+
+export function nextMemberColor(used: Iterable<string | null | undefined>) {
+  const taken = new Set([...used].map((color) => canonicalMemberColor(color)).filter(Boolean));
+  for (let index = 0; index < 64; index++) {
+    const color = availabilityMemberColor(index);
+    if (!taken.has(color)) return color;
+  }
+  return '#334155';
+}
+
+/** Keep saved colors and fill gaps so each person on the project has a different one. */
+export function assignMemberColors<T extends { id: string; color?: string | null }>(members: T[]) {
+  const used = new Set<string>();
+  return members.map((member) => {
+    const current = canonicalMemberColor(member.color);
+    if (current && !used.has(current)) {
+      used.add(current);
+      return current === member.color ? member : { ...member, color: current };
+    }
+    const color = nextMemberColor(used);
+    used.add(color);
+    return { ...member, color };
+  });
 }
 
 /** One teammate fills the hour. Several teammates split it so each color stays visible. */

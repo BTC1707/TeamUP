@@ -1,5 +1,6 @@
 import type { Project } from './model';
 import { avatarUrlFor } from './avatar';
+import { assignMemberColors, canonicalMemberColor } from './availability-calendar';
 import { milestonePhotoUrlFor, projectPhotoUrlFor } from './project-media';
 export type Actor = { userId: string; authUserId: string; email: string; displayName: string };
 export const userKey = (email: string) => 'user:' + email.trim().toLowerCase();
@@ -274,12 +275,13 @@ export function replaceRows(
       out.push(q(`INSERT OR IGNORE INTO settings(user_id) SELECT ? WHERE ${guard}`, [m.id]));
     }
     out.push(q(`DELETE FROM group_members WHERE group_id=? AND ${guard}`, [group]));
-    for (const m of p.members)
+    for (const m of assignMemberColors(p.members))
       out.push(
-        q(`INSERT INTO group_members(group_id,user_id,role) SELECT ?,?,? WHERE ${guard}`, [
+        q(`INSERT INTO group_members(group_id,user_id,role,color) SELECT ?,?,?,? WHERE ${guard}`, [
           group,
           m.id,
           m.id === owner ? 'owner' : 'member',
+          m.color,
         ]),
       );
   }
@@ -344,12 +346,39 @@ export function replaceRows(
     );
   return out;
 }
+async function memberColors(
+  db: D1Database,
+  groupId: string | null,
+  rows: { id: string; name: string; email: string; avatar_key?: string | null; color?: string | null }[],
+) {
+  const current = rows.map((member) => ({
+    id: member.id,
+    name: member.name,
+    email: member.email,
+    color: member.color || undefined,
+    ...(member.avatar_key ? { avatarUrl: avatarUrlFor(member.id, member.avatar_key) } : {}),
+  }));
+  const assigned = assignMemberColors(current);
+  const repairs = assigned.filter(
+    (member, index) => canonicalMemberColor(current[index]?.color) !== member.color,
+  );
+  if (groupId && repairs.length) {
+    await db.batch(
+      repairs.map((member) =>
+        db
+          .prepare('UPDATE group_members SET color=? WHERE group_id=? AND user_id=?')
+          .bind(member.color, groupId, member.id),
+      ),
+    );
+  }
+  return assigned;
+}
 export async function readProject(db: D1Database, id: string): Promise<Project> {
   const r = await db.prepare('SELECT * FROM projects WHERE id=?').bind(id).first<any>();
   const results = await db.batch([
     db
       .prepare(
-        'SELECT u.id,u.name,u.email,u.avatar_key FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
+        'SELECT u.id,u.name,u.email,u.avatar_key,g.color FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
       )
       .bind(r.group_id),
     db.prepare('SELECT * FROM tasks WHERE project_id=? ORDER BY due_date,id').bind(id),
@@ -371,12 +400,7 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
     ...(r.photo_key
       ? { photoKey: r.photo_key, photoUrl: projectPhotoUrlFor(id, r.photo_key) }
       : {}),
-    members: (results[0].results as any[]).map((m) => ({
-      id: m.id,
-      name: m.name,
-      email: m.email,
-      ...(m.avatar_key ? { avatarUrl: avatarUrlFor(m.id, m.avatar_key) } : {}),
-    })),
+    members: await memberColors(db, r.group_id, results[0].results as any[]),
     tasks: (results[1].results as any[]).map((t) => ({
       id: t.id,
       title: t.title,
