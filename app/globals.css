@@ -21,7 +21,7 @@
   --color-input: #dce1eb;
   --color-ring: #6561ea;
   --color-sidebar: #fff;
-  --color-sidebar-foreground: #536075;
+  --color-sidebar-foreground: #4e5666;
   --color-sidebar-primary: #5450d9;
   --color-sidebar-primary-foreground: #fff;
   --color-sidebar-accent: #eeedff;
@@ -110,7 +110,7 @@ a:focus-visible {
   font-size: 12px;
   letter-spacing: 1.4px;
   font-weight: 700;
-  color: #9299aa;
+  color: #4e5666;
   margin: 25px 12px 12px;
 }
 .app-main {
@@ -316,11 +316,11 @@ h3 {
   font-weight: 600;
 }
 .muted {
-  color: #7a8497;
+  color: #4e5666;
 }
 .subtext {
   font-size: 14px;
-  color: #7a8497;
+  color: #4e5666;
   margin-top: 7px;
   line-height: 1.6;
 }
@@ -1496,7 +1496,7 @@ button.member-row-button:focus-visible {
   padding: 10px 8px 10px 12px;
   border-radius: 8px;
   font-size: 14px;
-  color: #7c8394;
+  color: #4e5666;
 }
 .project-option-row.active .project-option {
   color: #6054bf;
@@ -1620,7 +1620,7 @@ button.member-row-button:focus-visible {
 }
 .account small {
   font-size: 12px;
-  color: #999;
+  color: #4e5666;
   display: block;
 }
 .pill {
