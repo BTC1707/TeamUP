@@ -119,13 +119,14 @@ export async function searchInvitees(db: D1Database, projectId: string, u: Actor
   const rows = await db
     .prepare(
       `SELECT id, name, username, email, avatar_key FROM users
-       WHERE lower(email)=? OR lower(username)=? OR lower(name)=?
+       WHERE id<>?
+         AND (lower(email)=? OR lower(username)=? OR lower(name)=?
           OR lower(email) LIKE ? ESCAPE '\\' OR lower(username) LIKE ? ESCAPE '\\'
-          OR lower(name) LIKE ? ESCAPE '\\' OR lower(name) LIKE ? ESCAPE '\\'
+          OR lower(name) LIKE ? ESCAPE '\\' OR lower(name) LIKE ? ESCAPE '\\')
        ORDER BY CASE WHEN lower(name)=? OR lower(email)=? OR lower(username)=? THEN 0 ELSE 1 END, name
        LIMIT 8`,
     )
-    .bind(query, query, query, prefix, prefix, prefix, nameWord, query, query, query)
+    .bind(u.userId, query, query, query, prefix, prefix, prefix, nameWord, query, query, query)
     .all<{
       id: string;
       name: string;
@@ -142,7 +143,7 @@ export async function searchInvitees(db: D1Database, projectId: string, u: Actor
       username: row.username || '',
       email: row.email,
       avatarUrl: avatarUrlFor(row.id, row.avatar_key) || undefined,
-      alreadyMember: row.id === u.userId || memberIds.has(row.id),
+      alreadyMember: memberIds.has(row.id),
     })),
   };
 }
