@@ -2528,7 +2528,8 @@ export default function Workspace({
             </div>
             {view !== 'Project settings' &&
               view !== 'Availability' &&
-              view !== 'Files' && (
+              view !== 'Files' &&
+              view !== 'Team' && (
               <button
                 className='btn primary'
                 data-tutorial-step='1'
@@ -2540,10 +2541,7 @@ export default function Workspace({
                     }
                   } else if (view === 'Milestones' && requireProject())
                     open('milestone', { due: project.due });
-                  else if (view === 'Team' && requireProject()) {
-                    if (isOwner) document.getElementById('invite-search')?.focus();
-                    else toast.info('The project creator can invite teammates.');
-                  } else if (requireProject()) open('task', { due: future(1), status: 'todo' });
+                  else if (requireProject()) open('task', { due: future(1), status: 'todo' });
                 }}
               >
                 <Plus size={16} />
@@ -2551,11 +2549,9 @@ export default function Workspace({
                   ? 'AI planner'
                   : view === 'Milestones'
                     ? 'Add milestone'
-                      : view === 'Team'
-                        ? 'Invite'
-                      : view === 'Overview' && isDemo && !loading
-                        ? 'Create project'
-                        : 'Add task'}
+                    : view === 'Overview' && isDemo && !loading
+                      ? 'Create project'
+                      : 'Add task'}
               </button>
             )}
           </div>
