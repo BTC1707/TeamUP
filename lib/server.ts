@@ -47,7 +47,9 @@ export function failure(e: unknown) {
             ? 'Project not found or access denied.'
             : message === 'CONFLICT'
               ? 'A teammate updated this project. Reload before saving again.'
-              : 'Unable to complete this request. Please try again.',
+              : message === 'LEAVE_OWNER'
+                ? 'Project owners can’t leave. Delete the project if the team is finished.'
+                : 'Unable to complete this request. Please try again.',
     },
     {
       status:
@@ -57,7 +59,9 @@ export function failure(e: unknown) {
             ? 404
             : message === 'CONFLICT'
               ? 409
-              : 500,
+              : message === 'LEAVE_OWNER'
+                ? 400
+                : 500,
     },
   );
 }

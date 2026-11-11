@@ -5,7 +5,8 @@ export type NotificationType =
   | 'task_created'
   | 'task_completed'
   | 'project_invite'
-  | 'invite_response';
+  | 'invite_response'
+  | 'member_left';
 
 export type AppNotification = {
   id: string;

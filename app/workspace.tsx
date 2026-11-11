@@ -1223,6 +1223,36 @@ export default function Workspace({
     setFiles([]);
   }
 
+  async function leaveCurrentProject() {
+    if (isOwner) {
+      toast.error('Project owners can’t leave. Delete the project if the team is finished.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (!localOnly) {
+        await api('/api/workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'leave', id: project.id, version: project.version }),
+        });
+      }
+      const remaining = projects.filter((entry) => entry.id !== project.id);
+      setProjects(remaining);
+      const nextProject = remaining[0] || emptyProject;
+      setProject(nextProject);
+      persistProjectSelection(nextProject.id || null);
+      setFiles([]);
+      setView('Overview');
+      setModal('');
+      toast.success(`You left ${project.name}.`);
+    } catch (error) {
+      setError((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function cancelPlanReview() {
     const createdId = planFromCreateId;
     const created = createdId ? projects.find((p) => p.id === createdId) || project : null;
@@ -3490,6 +3520,25 @@ export default function Workspace({
                   Manage team <ArrowRight size={16} />
                 </button>
               </section>
+              {!isOwner ? (
+                <section className='panel'>
+                  <div className='panel-heading'>
+                    <div>
+                      <h2>Leave project</h2>
+                      <p className='subtext'>
+                        Drop your access to {project.name}. Your tasks become unassigned so the team
+                        can hand them to someone else.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    className='btn danger delete-project-button'
+                    onClick={() => open('leave-project', {})}
+                  >
+                    Leave project
+                  </button>
+                </section>
+              ) : null}
               <section className='panel'>
                 <div className='panel-heading'>
                   <div>
@@ -3632,6 +3681,7 @@ export default function Workspace({
                   reminders: 'Reminder preferences',
                   profile: 'Your account',
                   remove: 'Remove team member',
+                  'leave-project': 'Leave project',
                   'rename-file': 'Rename file',
                 }[modal]
               }
@@ -3653,7 +3703,9 @@ export default function Workspace({
                         : 'Add a milestone to mark progress.'
                       : modal === 'rename-file'
                         ? 'Choose a clearer name for this shared file.'
-                        : 'Keep your team on the same page.'}
+                        : modal === 'leave-project'
+                          ? 'You can rejoin later if someone invites you again.'
+                          : 'Keep your team on the same page.'}
             </DialogDescription>
           </DialogHeader>
           {error && <div className='error'>{error}</div>}
@@ -4156,6 +4208,18 @@ export default function Workspace({
                   <small className='block'>{draft.email}</small>
                 </div>
               </div>
+              {draft.id === user?.id && !isOwner ? (
+                <div className='flex flex-wrap gap-2'>
+                  <button
+                    type='button'
+                    className='btn danger'
+                    disabled={busy}
+                    onClick={() => open('leave-project', {})}
+                  >
+                    Leave project
+                  </button>
+                </div>
+              ) : null}
               {draft.id !== user?.id && (
                 <div className='nudge-compose'>
                   <label>
@@ -4261,6 +4325,20 @@ export default function Workspace({
               )}
               <button type='button' className='btn' onClick={() => setModal('')}>
                 Close
+              </button>
+            </div>
+          )}
+          {modal === 'leave-project' && (
+            <div className='form'>
+              <p>
+                Leave <strong>{project.name}</strong>? You will lose access, and any tasks assigned
+                to you will return to the unassigned pool.
+              </p>
+              <button className='btn danger' disabled={busy} onClick={() => void leaveCurrentProject()}>
+                {busy ? 'Leaving…' : 'Leave project'}
+              </button>
+              <button className='btn' disabled={busy} onClick={() => setModal('')}>
+                Stay
               </button>
             </div>
           )}

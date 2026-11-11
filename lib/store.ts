@@ -492,6 +492,36 @@ export async function deleteProject(db: D1Database, id: string, u: Actor, versio
   const results = await db.batch(statements);
   if (!results[0].meta.changes) throw new Error('CONFLICT');
 }
+export async function leaveProject(db: D1Database, id: string, u: Actor) {
+  const p = await getProject(db, id, u);
+  if (p.owner === u.userId) throw new Error('LEAVE_OWNER');
+  const token = crypto.randomUUID();
+  const guard = 'EXISTS(SELECT 1 FROM projects WHERE id=? AND write_token=?)';
+  const results = await db.batch([
+    db
+      .prepare('UPDATE projects SET version=version+1, write_token=? WHERE id=? AND version=?')
+      .bind(token, id, p.version),
+    db
+      .prepare(
+        `DELETE FROM group_members WHERE group_id=? AND user_id=? AND ${guard}`,
+      )
+      .bind(p.groupId, u.userId, id, token),
+    db
+      .prepare(`DELETE FROM memberships WHERE project_id=? AND lower(email)=? AND ${guard}`)
+      .bind(id, u.email.toLowerCase(), id, token),
+    db
+      .prepare(
+        `UPDATE tasks SET assigned_user_id=NULL WHERE project_id=? AND assigned_user_id=? AND ${guard}`,
+      )
+      .bind(id, u.userId, id, token),
+    db
+      .prepare(`DELETE FROM availability WHERE project_id=? AND user_id=? AND ${guard}`)
+      .bind(id, u.userId, id, token),
+  ]);
+  if (!results[0].meta.changes) throw new Error('CONFLICT');
+  if (!results[1].meta.changes) throw new Error('NOT_FOUND');
+  return { ownerId: p.owner || '', projectName: p.name };
+}
 export async function cleanupFiles(db: D1Database, bucket: R2Bucket, userId: string) {
   const rows = await db
     .prepare('SELECT storage_key FROM file_cleanup WHERE user_id=? LIMIT 30')

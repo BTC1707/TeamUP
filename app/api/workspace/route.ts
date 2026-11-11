@@ -8,6 +8,7 @@ import {
   replaceRows,
   userKey,
   deleteProject,
+  leaveProject,
   cleanupFiles,
 } from '@/lib/store';
 import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
@@ -113,6 +114,30 @@ export async function POST(req: Request) {
           u.userId,
         ),
       ]);
+      return Response.json({ ok: true });
+    }
+    if (body.action === 'leave') {
+      const id = String(body.id || '');
+      if (!id) return Response.json({ error: 'Choose a project to leave.' }, { status: 400 });
+      const current = await projectFor(id, u);
+      if (!Number.isInteger(body.version) || body.version !== current.version) throw new Error('CONFLICT');
+      const left = await leaveProject(DB, id, u);
+      if (left.ownerId) {
+        try {
+          await insertNotifications(DB, [
+            {
+              userId: left.ownerId,
+              projectId: id,
+              type: 'member_left',
+              title: 'Teammate left',
+              body: `${u.displayName} left ${left.projectName}. Their tasks are unassigned.`,
+              meta: { actorName: u.displayName, projectName: left.projectName },
+            },
+          ]);
+        } catch (error) {
+          console.error('Leave notification failed', error);
+        }
+      }
       return Response.json({ ok: true });
     }
     if (!['create', 'update'].includes(body.action))
