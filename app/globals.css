@@ -1747,6 +1747,11 @@ button.member-row-button:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.invite-result-person small.invite-result-member {
+  overflow: visible;
+  text-overflow: unset;
+  white-space: normal;
+}
 .invite-result small {
   color: #667085;
 }

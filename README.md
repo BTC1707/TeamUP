@@ -177,7 +177,7 @@ npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put EMAIL_FROM
 ```
 
-Project owners invite teammates by email or username from Team or Project settings. The invite appears in that person’s notifications, where they can accept or decline. **Nudge** on the Team page is also an in-app notification.
+Project owners invite teammates by name, email, or username from Team or Project settings. The invite appears in that person’s notifications, where they can accept or decline. **Nudge** on the Team page is also an in-app notification.
 
 ---
 
@@ -269,4 +269,4 @@ TeamUP helps busy groups manage deadlines, task ownership, availability, and rem
 1. Sign in with name + email on the live site
 2. Create a project and add a task with a due date
 3. Reload — the task should still be there
-4. From Team, search a teammate by email or username and send an invite. Accept it from the other account’s notifications.
+4. From Team, search a teammate by name, email, or username and send an invite. Accept it from the other account’s notifications.

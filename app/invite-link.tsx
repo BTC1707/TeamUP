@@ -36,11 +36,13 @@ type Person = {
   username: string;
   email: string;
   avatarUrl?: string;
+  alreadyMember?: boolean;
 };
 
 export default function InviteLink({ project }: { project: string }) {
   const [query, setQuery] = useState('');
   const [people, setPeople] = useState<Person[]>([]);
+  const [projectName, setProjectName] = useState('this project');
   const [searching, setSearching] = useState(false);
   const [invitingId, setInvitingId] = useState('');
   const [url, setUrl] = useState('');
@@ -85,7 +87,11 @@ export default function InviteLink({ project }: { project: string }) {
     const timer = window.setTimeout(() => {
       request('search', { query: trimmed })
         .then((data) => {
-          if (active) setPeople(Array.isArray(data.people) ? data.people : []);
+          if (!active) return;
+          setPeople(Array.isArray(data.people) ? data.people : []);
+          if (typeof data.projectName === 'string' && data.projectName.trim()) {
+            setProjectName(data.projectName.trim());
+          }
         })
         .catch((searchError) => {
           if (active) setError((searchError as Error).message);
@@ -136,7 +142,7 @@ export default function InviteLink({ project }: { project: string }) {
       <div>
         <h2>Invite teammates</h2>
         <p className='subtext'>
-          Search by email or username. They get a notification and can accept or decline.
+          Search by name, email, or username. They get a notification and can accept or decline.
         </p>
       </div>
       {error ? <p className='error'>{error}</p> : null}
@@ -146,7 +152,7 @@ export default function InviteLink({ project }: { project: string }) {
           id='invite-search'
           value={query}
           maxLength={80}
-          placeholder='Email or username'
+          placeholder='Name, email, or username'
           autoComplete='off'
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -155,7 +161,7 @@ export default function InviteLink({ project }: { project: string }) {
         <div className='invite-results'>
           {searching ? <p className='form-note'>Searching…</p> : null}
           {!searching && people.length === 0 ? (
-            <p className='form-note'>No TeamUP account matches that email or username.</p>
+            <p className='form-note'>No TeamUP account matches that name, email, or username.</p>
           ) : null}
           {people.map((person) => (
             <div className='invite-result' key={person.id}>
@@ -163,20 +169,23 @@ export default function InviteLink({ project }: { project: string }) {
                 <SearchAvatar name={person.name} avatarUrl={person.avatarUrl} />
                 <div>
                   <strong>{person.name}</strong>
-                  <small className='block'>
-                    {person.username ? `@${person.username} · ` : ''}
-                    {person.email}
+                  <small className={person.alreadyMember ? 'block invite-result-member' : 'block'}>
+                    {person.alreadyMember
+                      ? `${person.name} is already a member of ${projectName}.`
+                      : `${person.username ? `@${person.username} · ` : ''}${person.email}`}
                   </small>
                 </div>
               </div>
-              <button
-                type='button'
-                className='btn primary'
-                disabled={invitingId === person.id}
-                onClick={() => void invite(person)}
-              >
-                {invitingId === person.id ? 'Inviting…' : 'Invite'}
-              </button>
+              {person.alreadyMember ? null : (
+                <button
+                  type='button'
+                  className='btn primary'
+                  disabled={invitingId === person.id}
+                  onClick={() => void invite(person)}
+                >
+                  {invitingId === person.id ? 'Inviting…' : 'Invite'}
+                </button>
+              )}
             </div>
           ))}
         </div>

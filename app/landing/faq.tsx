@@ -13,7 +13,7 @@ const questions = [
   {
     question: 'How do teammates join a project?',
     answer:
-      'The project owner can search for a teammate by email or username and send an invite. It shows up in their notifications, where they can accept or decline.',
+      'The project owner can search for a teammate by name, email, or username and send an invite. It shows up in their notifications, where they can accept or decline.',
   },
   {
     question: 'Does TeamUP send reminders?',

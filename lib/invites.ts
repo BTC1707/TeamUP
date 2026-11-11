@@ -108,20 +108,24 @@ function escapeLike(value: string) {
   return value.replace(/[\\%_]/g, (char) => `\\${char}`);
 }
 
-/** Find existing accounts by email or username. Does not include the current project members. */
+/** Find accounts by name, email, or username. Members stay in the list so the UI can say they already belong. */
 export async function searchInvitees(db: D1Database, projectId: string, u: Actor, rawQuery: string) {
   const project = await getProject(db, projectId, u);
   if (project.owner !== u.userId) throw new Error('NOT_FOUND');
   const query = rawQuery.trim().toLowerCase().slice(0, 80);
-  if (query.length < 2) return [];
+  if (query.length < 2) return { people: [], projectName: project.name };
   const prefix = `${escapeLike(query)}%`;
+  const nameWord = `% ${prefix}`;
   const rows = await db
     .prepare(
       `SELECT id, name, username, email, avatar_key FROM users
-       WHERE lower(email)=? OR lower(username)=? OR lower(email) LIKE ? ESCAPE '\\' OR lower(username) LIKE ? ESCAPE '\\'
+       WHERE lower(email)=? OR lower(username)=? OR lower(name)=?
+          OR lower(email) LIKE ? ESCAPE '\\' OR lower(username) LIKE ? ESCAPE '\\'
+          OR lower(name) LIKE ? ESCAPE '\\' OR lower(name) LIKE ? ESCAPE '\\'
+       ORDER BY CASE WHEN lower(name)=? OR lower(email)=? OR lower(username)=? THEN 0 ELSE 1 END, name
        LIMIT 8`,
     )
-    .bind(query, query, prefix, prefix)
+    .bind(query, query, query, prefix, prefix, prefix, nameWord, query, query, query)
     .all<{
       id: string;
       name: string;
@@ -130,15 +134,17 @@ export async function searchInvitees(db: D1Database, projectId: string, u: Actor
       avatar_key: string | null;
     }>();
   const memberIds = new Set(project.members.map((member) => member.id));
-  return rows.results
-    .filter((row) => row.id !== u.userId && !memberIds.has(row.id))
-    .map((row) => ({
+  return {
+    projectName: project.name,
+    people: rows.results.map((row) => ({
       id: row.id,
       name: row.name,
       username: row.username || '',
       email: row.email,
       avatarUrl: avatarUrlFor(row.id, row.avatar_key) || undefined,
-    }));
+      alreadyMember: row.id === u.userId || memberIds.has(row.id),
+    })),
+  };
 }
 
 /** Ask an existing account to join. They accept or decline from notifications. */

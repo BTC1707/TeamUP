@@ -4085,8 +4085,8 @@ export default function Workspace({
                     />
                   </label>
                   <p className='form-note'>
-                    This adds them to the roster. To let them join the project, search their email
-                    or username and send an invite they can accept.
+                    This adds them to the roster. To let them join the project, search their name,
+                    email, or username and send an invite they can accept.
                   </p>
                 </>
               )}

@@ -35,9 +35,7 @@ export async function POST(req: Request) {
         result = await createInvite(db, String(b.project || ''), u);
         break;
       case 'search':
-        result = {
-          people: await searchInvitees(db, String(b.project || ''), u, String(b.query || '')),
-        };
+        result = await searchInvitees(db, String(b.project || ''), u, String(b.query || ''));
         break;
       case 'invite':
         result = await inviteMember(db, String(b.project || ''), u, String(b.userId || ''));
