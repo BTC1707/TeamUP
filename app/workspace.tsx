@@ -2963,7 +2963,11 @@ export default function Workspace({
                 </button>
               </div>
 
-              <div className='availability-people' role='list'>
+              <div
+                className='availability-people'
+                role='group'
+                aria-label='Filter availability by teammate'
+              >
                 <button
                   type='button'
                   className={
@@ -2982,7 +2986,6 @@ export default function Workspace({
                     <button
                       key={member.id}
                       type='button'
-                      role='listitem'
                       className={
                         'availability-person' +
                         (selected ? ' selected' : '') +
