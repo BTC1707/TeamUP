@@ -130,7 +130,7 @@ export async function POST(req: Request) {
               projectId: id,
               type: 'member_left',
               title: 'Teammate left',
-              body: `${u.displayName} left ${left.projectName}. Their tasks are unassigned.`,
+              body: `${u.displayName} left ${left.projectName}. Their tasks were reassigned to you.`,
               meta: { actorName: u.displayName, projectName: left.projectName },
             },
           ]);

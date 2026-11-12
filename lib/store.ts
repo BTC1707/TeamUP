@@ -511,9 +511,9 @@ export async function leaveProject(db: D1Database, id: string, u: Actor) {
       .bind(id, u.email.toLowerCase(), id, token),
     db
       .prepare(
-        `UPDATE tasks SET assigned_user_id=NULL WHERE project_id=? AND assigned_user_id=? AND ${guard}`,
+        `UPDATE tasks SET assigned_user_id=? WHERE project_id=? AND assigned_user_id=? AND ${guard}`,
       )
-      .bind(id, u.userId, id, token),
+      .bind(p.owner, id, u.userId, id, token),
     db
       .prepare(`DELETE FROM availability WHERE project_id=? AND user_id=? AND ${guard}`)
       .bind(id, u.userId, id, token),

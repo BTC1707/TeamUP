@@ -4434,7 +4434,7 @@ export default function Workspace({
             <div className='form'>
               <p>
                 Leave <strong>{project.name}</strong>? You will lose access, and any tasks assigned
-                to you will return to the unassigned pool.
+                to you will be reassigned to the project owner.
               </p>
               <button className='btn danger' disabled={busy} onClick={() => void leaveCurrentProject()}>
                 {busy ? 'Leaving…' : 'Leave project'}
@@ -4447,8 +4447,8 @@ export default function Workspace({
           {modal === 'remove' && (
             <div className='form'>
               <p>
-                Remove {draft.name} from this project? Their tasks will move back to the unassigned
-                pool so the team can redelegate them.
+                Remove {draft.name} from this project? Their tasks will be reassigned to the project
+                owner.
               </p>
               <button
                 className='btn primary'
@@ -4458,13 +4458,13 @@ export default function Workspace({
                     ...project,
                     members: project.members.filter((m) => m.id !== draft.id),
                     tasks: project.tasks.map((t) =>
-                      t.assignee === draft.id ? { ...t, assignee: '' } : t,
+                      t.assignee === draft.id ? { ...t, assignee: project.owner } : t,
                     ),
                   });
                   if (ok) setModal('');
                 }}
               >
-                Remove and unassign tasks
+                Remove and reassign tasks
               </button>
             </div>
           )}
