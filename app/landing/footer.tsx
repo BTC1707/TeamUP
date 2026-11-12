@@ -10,6 +10,10 @@ export function LandingFooter() {
       <a href={LANDING_ROUTES.signIn}>Sign in</a>
       <span aria-hidden='true'>·</span>
       <DemoLink>Demo</DemoLink>
+      <span aria-hidden='true'>·</span>
+      <a className='landing-footer-admin' href='/admin'>
+        Admin
+      </a>
     </footer>
   );
 }

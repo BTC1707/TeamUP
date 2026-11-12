@@ -8,6 +8,7 @@ import {
 } from '@/lib/ai';
 import { clearMessages, conversation, readMessages } from '@/lib/conversations';
 import { readProject, replaceRows } from '@/lib/store';
+import { countNewRecords, creationStatements } from '@/lib/usage';
 import {
   rangesToProposal,
   mergeSlots,
@@ -94,6 +95,10 @@ async function persistProject(project: Project, availabilityUser?: string) {
   const owner = project.owner;
   if (!groupId || !owner) throw new Error('NOT_FOUND');
   const token = crypto.randomUUID();
+  const existing = await DB.batch([
+    DB.prepare('SELECT id FROM tasks WHERE project_id=?').bind(project.id),
+    DB.prepare('SELECT id FROM milestones WHERE project_id=?').bind(project.id),
+  ]);
   const stmts = [
     DB.prepare(
       'UPDATE projects SET title=?,description=?,course=?,deadline=?,reminder_hours=?,version=version+1,write_token=? WHERE id=? AND version=?',
@@ -108,6 +113,13 @@ async function persistProject(project: Project, availabilityUser?: string) {
       project.version,
     ),
     ...replaceRows(DB, project, groupId, owner, token, false, availabilityUser),
+    ...creationStatements(
+      DB,
+      project.id,
+      token,
+      countNewRecords(project.tasks, existing[0].results as { id: string }[]),
+      countNewRecords(project.milestones, existing[1].results as { id: string }[]),
+    ),
   ];
   const results = await DB.batch(stmts);
   if (!results[0].meta.changes) throw new Error('CONFLICT');

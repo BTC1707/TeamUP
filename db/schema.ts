@@ -25,6 +25,8 @@ export const users = sqliteTable(
     phone: text('phone'),
     /** R2 object key for profile photo; null when using initials. */
     avatarKey: text('avatar_key'),
+    /** 1 when this account can open the admin page. */
+    admin: integer('admin').notNull().default(0),
   },
   (t) => [
     uniqueIndex('users_email').on(t.email),
@@ -32,6 +34,11 @@ export const users = sqliteTable(
     uniqueIndex('users_username').on(t.username),
   ],
 );
+/** Single row `site`. `projects_created` is every project ever created on TeamUP. */
+export const siteStats = sqliteTable('site_stats', {
+  id: text('id').primaryKey(),
+  projectsCreated: integer('projects_created').notNull().default(0),
+});
 export const groups = sqliteTable('groups', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -50,6 +57,22 @@ export const groupMembers = sqliteTable(
     color: text('color'),
   },
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user').on(t.userId)],
+);
+/**
+ * One row per account per UTC day they used TeamUP.
+ * `actions` counts separate stretches of use, not background refreshes.
+ */
+export const accountActivity = sqliteTable(
+  'account_activity',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    day: text('day').notNull(),
+    actions: integer('actions').notNull().default(0),
+    lastSeen: text('last_seen').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] }), index('account_activity_day').on(t.day)],
 );
 export const settings = sqliteTable('settings', {
   userId: text('user_id')
@@ -76,6 +99,10 @@ export const projects = sqliteTable('projects', {
   writeToken: text('write_token'),
   /** R2 object key for project cover photo. */
   photoKey: text('photo_key'),
+  /** Tasks ever added to this project. Deletes do not reduce it. */
+  tasksCreated: integer('tasks_created').notNull().default(0),
+  /** Milestones ever added to this project. Deletes do not reduce it. */
+  milestonesCreated: integer('milestones_created').notNull().default(0),
 });
 export const milestones = sqliteTable(
   'milestones',
