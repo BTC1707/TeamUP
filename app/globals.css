@@ -3439,6 +3439,7 @@ body.tutorial-running .app-main {
   color: #7a8497;
   font-size: 13px;
   font-weight: 600;
+  line-height: 1.35;
 }
 .admin-stats strong {
   display: block;
@@ -3491,7 +3492,18 @@ body.tutorial-running .app-main {
   font-weight: 700;
   letter-spacing: 0.02em;
 }
-.admin-table tr.is-open td {
+.admin-table tbody tr {
+  cursor: pointer;
+}
+.admin-table tbody tr:hover td {
+  background: #f7f8fc;
+}
+.admin-table tbody tr:focus-visible {
+  outline: 2px solid #8c80e0;
+  outline-offset: -2px;
+}
+.admin-table tr.is-open td,
+.admin-table tr.is-open:hover td {
   background: #f6f4ff;
 }
 .admin-table-compact th,
@@ -3502,16 +3514,6 @@ body.tutorial-running .app-main {
   color: #7a8497;
   text-align: center;
   padding: 28px 14px;
-}
-.admin-count {
-  border: 0;
-  background: transparent;
-  color: #4c45c4;
-  font-weight: 700;
-  padding: 0;
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 .admin-row-actions {
   display: flex;

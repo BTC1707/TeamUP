@@ -324,11 +324,11 @@ export default function AdminConsole() {
   }
 
   const stats = [
-    ['Lifetime projects', overview.stats.projectsCreated],
+    ['Lifetime projects across all users', overview.stats.projectsCreated],
     ['Accounts', overview.stats.accounts],
     ['Active today', overview.stats.activeToday],
-    ['Tasks created', overview.stats.tasksCreated],
-    ['Milestones created', overview.stats.milestonesCreated],
+    ['Tasks created across all users', overview.stats.tasksCreated],
+    ['Milestones created across all users', overview.stats.milestonesCreated],
   ] as const;
 
   return (
@@ -400,41 +400,43 @@ export default function AdminConsole() {
               rows.map((account) => {
                 const open = selectedId === account.id;
                 return (
-                  <tr key={account.id} className={open ? 'is-open' : undefined}>
+                  <tr
+                    key={account.id}
+                    className={open ? 'is-open' : undefined}
+                    tabIndex={0}
+                    aria-expanded={open}
+                    onClick={() => toggleDetail(account.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        toggleDetail(account.id);
+                      }
+                    }}
+                  >
                     <td>{account.name}</td>
                     <td>{account.username || '—'}</td>
                     <td>{account.email}</td>
-                    <td>
-                      <button
-                        type='button'
-                        className='admin-count'
-                        aria-expanded={open}
-                        onClick={() => toggleDetail(account.id)}
-                      >
-                        {account.daysUsed.toLocaleString()}
-                      </button>
-                    </td>
+                    <td>{account.daysUsed.toLocaleString()}</td>
                     <td>{formatWhen(account.lastSeen)}</td>
-                    <td>
-                      <button
-                        type='button'
-                        className='admin-count'
-                        aria-expanded={open}
-                        onClick={() => toggleDetail(account.id)}
-                      >
-                        {account.projects.toLocaleString()}
-                      </button>
-                    </td>
+                    <td>{account.projects.toLocaleString()}</td>
                     <td>{account.admin ? 'Admin' : 'Member'}</td>
                     <td className='admin-row-actions'>
-                      <button type='button' className='btn' onClick={() => openEdit(account)}>
+                      <button
+                        type='button'
+                        className='btn'
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEdit(account);
+                        }}
+                      >
                         Edit
                       </button>
                       <button
                         type='button'
                         className='btn admin-delete'
                         disabled={account.id === overview.viewerId}
-                        onClick={() => {
+                        onClick={(event) => {
+                          event.stopPropagation();
                           setError(null);
                           setPendingDelete(account);
                         }}
