@@ -3400,50 +3400,6 @@ body.tutorial-running .app-main {
     radial-gradient(900px 480px at 12% -10%, #e8e4ff 0%, transparent 55%),
     #f7f8fc;
 }
-.admin-database-header {
-  margin-bottom: 22px;
-}
-.admin-database-header p {
-  margin-top: 8px;
-  color: #536075;
-  font-size: 15px;
-}
-.admin-database-table-wrap {
-  overflow-x: auto;
-  border: 1px solid #e5e8ef;
-  border-radius: 12px;
-  background: #fff;
-}
-.admin-database-table {
-  width: 100%;
-  min-width: 520px;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.admin-database-table th,
-.admin-database-table td {
-  padding: 13px 16px;
-  border-bottom: 1px solid #eef0f5;
-  text-align: left;
-  vertical-align: middle;
-}
-.admin-database-table th {
-  background: #f7f8fc;
-  color: #4e5666;
-  font-size: 12px;
-  font-weight: 700;
-}
-.admin-database-table td {
-  color: #222b40;
-}
-.admin-database-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-.admin-database-table .admin-database-empty {
-  padding: 24px;
-  color: #536075;
-  text-align: center;
-}
 .admin-loading {
   margin: 0;
   color: #667085;

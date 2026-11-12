@@ -14,7 +14,7 @@ import {
 import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
 import { avatarUrlFor } from '@/lib/avatar';
 import { availabilitySlotsError } from '@/lib/availability-calendar';
-import { countNewRecords, creationStatements, projectCreatedStatement } from '@/lib/usage';
+import { countNewRecords, creationStatements, projectCreatedStatements } from '@/lib/usage';
 import type { Project } from '@/lib/model';
 export async function GET(req: Request) {
   try {
@@ -299,7 +299,7 @@ export async function POST(req: Request) {
         countNewRecords(p.milestones, previous?.milestones),
       ),
     );
-    if (create) stmts.push(projectCreatedStatement(DB, p.id, token));
+    if (create) stmts.push(...projectCreatedStatements(DB, owner, p.id, token));
     const results = await DB.batch(stmts);
     if (!create && !results[0].meta.changes) throw new Error('CONFLICT');
     const saved = await readProject(DB, p.id);

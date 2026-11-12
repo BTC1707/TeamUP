@@ -28,6 +28,9 @@ export type AdminAccount = {
   daysUsed: number;
   lastSeen: string | null;
   actions: number;
+  /** Projects this person has created. Deletes do not reduce it. */
+  projectsCreated: number;
+  /** Projects they still belong to. */
   projects: number;
 };
 
@@ -68,6 +71,7 @@ function mapAccount(
     days_used: number;
     last_seen: string | null;
     actions: number;
+    projects_created: number;
     projects: number;
   },
 ): AdminAccount {
@@ -83,6 +87,7 @@ function mapAccount(
     daysUsed: row.days_used,
     lastSeen: row.last_seen,
     actions: row.actions,
+    projectsCreated: row.projects_created,
     projects: row.projects,
   };
 }
@@ -162,6 +167,7 @@ export async function requireAdmin() {
 const ACCOUNT_SELECT = `
   SELECT
     u.id, u.auth_id, u.name, u.first_name, u.last_name, u.username, u.email, u.admin,
+    u.projects_created AS projects_created,
     (SELECT count(*) FROM account_activity a WHERE a.user_id = u.id) AS days_used,
     (SELECT max(a.last_seen) FROM account_activity a WHERE a.user_id = u.id) AS last_seen,
     (SELECT coalesce(sum(a.actions), 0) FROM account_activity a WHERE a.user_id = u.id) AS actions,
@@ -201,6 +207,7 @@ export async function adminOverview(db: D1Database, viewerId: string) {
       days_used: number;
       last_seen: string | null;
       actions: number;
+      projects_created: number;
       projects: number;
     })[]
   ).map(mapAccount);
@@ -213,7 +220,13 @@ export async function adminAccountDetail(db: D1Database, userId: string) {
     .prepare(`${ACCOUNT_SELECT} WHERE u.id=? LIMIT 1`)
     .bind(userId)
     .first<
-      UserRow & { days_used: number; last_seen: string | null; actions: number; projects: number }
+      UserRow & {
+        days_used: number;
+        last_seen: string | null;
+        actions: number;
+        projects_created: number;
+        projects: number;
+      }
     >();
   if (!account) return null;
 

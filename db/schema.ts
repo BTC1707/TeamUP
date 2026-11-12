@@ -27,6 +27,8 @@ export const users = sqliteTable(
     avatarKey: text('avatar_key'),
     /** 1 when this account can open the admin page. */
     admin: integer('admin').notNull().default(0),
+    /** Projects this account has created. Deletes do not reduce it. */
+    projectsCreated: integer('projects_created').notNull().default(0),
   },
   (t) => [
     uniqueIndex('users_email').on(t.email),

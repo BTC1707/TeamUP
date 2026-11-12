@@ -31,14 +31,23 @@ export function creationStatements(
   ];
 }
 
-/** Add one to the sitewide lifetime project count after that project row exists. */
-export function projectCreatedStatement(db: D1Database, projectId: string, token: string) {
-  return db
-    .prepare(
-      `UPDATE site_stats SET projects_created = projects_created + 1
-       WHERE id = 'site' AND EXISTS (SELECT 1 FROM projects WHERE id = ? AND write_token = ?)`,
-    )
-    .bind(projectId, token);
+/** Add one to the sitewide count and to the creator's own count after that project row exists. */
+export function projectCreatedStatements(db: D1Database, ownerId: string, projectId: string, token: string) {
+  const created = `EXISTS (SELECT 1 FROM projects WHERE id = ? AND write_token = ?)`;
+  return [
+    db
+      .prepare(
+        `UPDATE site_stats SET projects_created = projects_created + 1
+         WHERE id = 'site' AND ${created}`,
+      )
+      .bind(projectId, token),
+    db
+      .prepare(
+        `UPDATE users SET projects_created = projects_created + 1
+         WHERE id = ? AND ${created}`,
+      )
+      .bind(ownerId, projectId, token),
+  ];
 }
 
 /**

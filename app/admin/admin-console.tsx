@@ -14,6 +14,7 @@ type Account = {
   daysUsed: number;
   lastSeen: string | null;
   actions: number;
+  projectsCreated: number;
   projects: number;
 };
 
@@ -384,7 +385,8 @@ export default function AdminConsole() {
               <th>Email</th>
               <th>Days used</th>
               <th>Last active</th>
-              <th>Projects</th>
+              <th>Projects created</th>
+              <th>Active projects</th>
               <th>Access</th>
               <th />
             </tr>
@@ -392,7 +394,7 @@ export default function AdminConsole() {
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td className='admin-empty' colSpan={8}>
+                <td className='admin-empty' colSpan={9}>
                   No accounts match that search.
                 </td>
               </tr>
@@ -418,6 +420,7 @@ export default function AdminConsole() {
                     <td>{account.email}</td>
                     <td>{account.daysUsed.toLocaleString()}</td>
                     <td>{formatWhen(account.lastSeen)}</td>
+                    <td>{account.projectsCreated.toLocaleString()}</td>
                     <td>{account.projects.toLocaleString()}</td>
                     <td>{account.admin ? 'Admin' : 'Member'}</td>
                     <td className='admin-row-actions'>
@@ -461,7 +464,7 @@ export default function AdminConsole() {
               <header>
                 <h2>{detail.account.name}</h2>
                 <p className='subtext'>
-                  {`${detail.account.daysUsed.toLocaleString()} day${detail.account.daysUsed === 1 ? '' : 's'} on TeamUP${
+                  {`${detail.account.projectsCreated.toLocaleString()} project${detail.account.projectsCreated === 1 ? '' : 's'} created by ${detail.account.name}. Deleting a project does not lower this number. ${detail.account.daysUsed.toLocaleString()} day${detail.account.daysUsed === 1 ? '' : 's'} on TeamUP${
                     detail.account.actions
                       ? ` · ${detail.account.actions.toLocaleString()} stretch${detail.account.actions === 1 ? '' : 'es'} of use`
                       : ''
