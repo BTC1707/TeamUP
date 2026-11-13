@@ -6,7 +6,6 @@ export const workspaceRoutes = [
   { view: 'Availability', path: 'availability' },
   { view: 'Files', path: 'files' },
   { view: 'Team', path: 'team' },
-  { view: 'Project settings', path: 'project-settings' },
 ] as const;
 
 export type WorkspaceView = (typeof workspaceRoutes)[number]['view'];
