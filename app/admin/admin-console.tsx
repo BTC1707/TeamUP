@@ -508,7 +508,7 @@ export default function AdminConsole() {
                           <th>Project</th>
                           <th>Role</th>
                           <th>Tasks</th>
-                          <th>Accomplished</th>
+                          <th>Milestones Accomplished</th>
                         </tr>
                       </thead>
                       <tbody>
