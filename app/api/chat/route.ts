@@ -9,7 +9,7 @@ import {
 import { clearMessages, conversation, readMessages } from '@/lib/conversations';
 import { readProject, replaceRows } from '@/lib/store';
 import { projectUpdateAllowed } from '@/lib/project-permissions';
-import { countNewRecords, creationStatements } from '@/lib/usage';
+import { countAccomplishedMilestones, countNewRecords, creationStatements } from '@/lib/usage';
 import {
   rangesToProposal,
   mergeSlots,
@@ -121,7 +121,7 @@ async function persistProject(project: Project, actorId: string, availabilityUse
       project.id,
       token,
       countNewRecords(project.tasks, existing[0].results as { id: string }[]),
-      countNewRecords(project.milestones, existing[1].results as { id: string }[]),
+      countAccomplishedMilestones(project.milestones, previous.milestones),
     ),
   ];
   const results = await DB.batch(stmts);

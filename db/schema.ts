@@ -105,7 +105,7 @@ export const projects = sqliteTable('projects', {
   photoKey: text('photo_key'),
   /** Tasks ever added to this project. Deletes do not reduce it. */
   tasksCreated: integer('tasks_created').notNull().default(0),
-  /** Milestones ever added to this project. Deletes do not reduce it. */
+  /** Milestones marked complete. Marking one incomplete does not reduce it. */
   milestonesCreated: integer('milestones_created').notNull().default(0),
 });
 export const milestones = sqliteTable(

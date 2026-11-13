@@ -14,7 +14,7 @@ import {
 import { insertNotifications, taskActivityNotifications } from '@/lib/notifications';
 import { avatarUrlFor } from '@/lib/avatar';
 import { availabilitySlotsError } from '@/lib/availability-calendar';
-import { countNewRecords, creationStatements, projectCreatedStatements } from '@/lib/usage';
+import { countAccomplishedMilestones, countNewRecords, creationStatements, projectCreatedStatements } from '@/lib/usage';
 import { memberLabel, type Project } from '@/lib/model';
 import { projectUpdateAllowed } from '@/lib/project-permissions';
 export async function GET(req: Request) {
@@ -356,7 +356,7 @@ export async function POST(req: Request) {
         p.id,
         token,
         countNewRecords(p.tasks, previous?.tasks),
-        countNewRecords(p.milestones, previous?.milestones),
+        countAccomplishedMilestones(p.milestones, previous?.milestones),
       ),
     );
     if (create) stmts.push(...projectCreatedStatements(DB, owner, p.id, token));

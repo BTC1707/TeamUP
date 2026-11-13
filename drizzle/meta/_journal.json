@@ -134,6 +134,13 @@
       "when": 1795200000000,
       "tag": "0018_project_nicknames",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1795300000000,
+      "tag": "0019_milestones_accomplished",
+      "breakpoints": true
     }
   ]
 }

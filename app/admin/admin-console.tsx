@@ -329,7 +329,7 @@ export default function AdminConsole() {
     ['Accounts', overview.stats.accounts],
     ['Active today', overview.stats.activeToday],
     ['Tasks created across all users', overview.stats.tasksCreated],
-    ['Milestones created across all users', overview.stats.milestonesCreated],
+    ['Milestones Accomplished', overview.stats.milestonesCreated],
   ] as const;
 
   return (
@@ -508,7 +508,7 @@ export default function AdminConsole() {
                           <th>Project</th>
                           <th>Role</th>
                           <th>Tasks</th>
-                          <th>Milestones</th>
+                          <th>Accomplished</th>
                         </tr>
                       </thead>
                       <tbody>

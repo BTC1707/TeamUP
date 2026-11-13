@@ -12,14 +12,27 @@ export function countNewRecords(next: { id: string }[], previous: { id: string }
   return created;
 }
 
+/** Milestones that became complete on this save. Marking one incomplete does not reduce the total. */
+export function countAccomplishedMilestones(
+  next: { id: string; done: boolean }[],
+  previous: { id: string; done: boolean }[] = [],
+) {
+  const wasDone = new Map(previous.map((item) => [item.id, item.done]));
+  let accomplished = 0;
+  for (const item of next) {
+    if (item.done && !wasDone.get(item.id)) accomplished += 1;
+  }
+  return accomplished;
+}
+
 export function creationStatements(
   db: D1Database,
   projectId: string,
   token: string,
   tasksCreated: number,
-  milestonesCreated: number,
+  milestonesAccomplished: number,
 ) {
-  if (tasksCreated <= 0 && milestonesCreated <= 0) return [];
+  if (tasksCreated <= 0 && milestonesAccomplished <= 0) return [];
   return [
     db
       .prepare(
@@ -27,7 +40,7 @@ export function creationStatements(
          SET tasks_created = tasks_created + ?, milestones_created = milestones_created + ?
          WHERE id = ? AND write_token = ?`,
       )
-      .bind(tasksCreated, milestonesCreated, projectId, token),
+      .bind(tasksCreated, milestonesAccomplished, projectId, token),
   ];
 }
 
