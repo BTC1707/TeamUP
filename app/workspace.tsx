@@ -1596,7 +1596,7 @@ export default function Workspace({
         if (create) return [...prev.filter((p) => p.id !== next.id), next];
         return prev.map((p) => (p.id === next.id ? next : p));
       });
-      return true;
+      return next;
     }
     setBusy(true);
     try {
@@ -1612,11 +1612,11 @@ export default function Workspace({
           ? [...prev, result.project]
           : prev.map((p) => (p.id === next.id ? result.project : p)),
       );
-      return true;
+      return result.project as Project;
     } catch (e) {
       setError((e as Error).message);
       toast.error((e as Error).message);
-      return false;
+      return null;
     } finally {
       setBusy(false);
     }
@@ -1995,7 +1995,7 @@ export default function Workspace({
     e.preventDefault();
     if (busy) return;
     setError('');
-    let ok = false;
+    let ok: boolean | Project | null = false;
     if (modal === 'project') {
       if (!user) {
         setError('Sign in before creating your project.');
@@ -2009,14 +2009,14 @@ export default function Workspace({
           setError('Project not found.');
           return;
         }
-        ok = await save({
+        ok = !!(await save({
           ...target,
           name: draft.name,
           course: draft.course || '',
           description: draft.description || '',
           due: draft.due,
           reminderHours: Number(draft.reminderHours ?? target.reminderHours),
-        });
+        }));
       } else {
         const newId = uid();
         const rubricFiles: File[] = Array.isArray(draft.rubricFiles) ? draft.rubricFiles : [];
@@ -2038,27 +2038,28 @@ export default function Workspace({
           version: 0,
           owner: user.id,
         };
-        ok = await save(created, true);
-        if (ok && wantsPlan) {
+        const saved = await save(created, true);
+        ok = !!saved;
+        if (saved && wantsPlan) {
           try {
             setBusy(true);
             const text = rubricPaste || String(draft.description || '');
             let ids: string[] = [];
-            if (!localOnly) ids = await uploadPlanFiles(newId, rubricFiles);
+            if (!localOnly) ids = await uploadPlanFiles(saved.id, rubricFiles);
             else setPlanFiles(rubricFiles.slice(0, 3));
             const suggested = await requestPlan(
-              newId,
+              saved.id,
               text,
               ids,
               draft.includeMilestones !== false,
-              created,
+              saved,
               rubricFiles,
             );
             setPlanFileIds(ids);
             setIncludeMilestones(draft.includeMilestones !== false);
             setRequirements(text);
             setPlan(suggested);
-            setPlanFromCreateId(newId);
+            setPlanFromCreateId(saved.id);
             setModal('planner');
             toast.message('Review the suggested plan — Cancel removes this project.');
             return;
@@ -4611,7 +4612,7 @@ export default function Workspace({
                     ...project,
                     members: project.members.filter((m) => m.id !== draft.id),
                     tasks: project.tasks.map((t) =>
-                      t.assignee === draft.id ? { ...t, assignee: project.owner } : t,
+                      t.assignee === draft.id ? { ...t, assignee: project.owner || '' } : t,
                     ),
                   });
                   if (ok) setModal('');
