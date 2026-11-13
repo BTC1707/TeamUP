@@ -478,7 +478,9 @@ export async function deleteProject(db: D1Database, id: string, u: Actor, versio
     ),
   ];
   for (const table of [
+    'project_member_invites',
     'project_invites',
+    'notifications',
     'conversations',
     'chats',
     'availability',

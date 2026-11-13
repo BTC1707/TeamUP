@@ -2385,6 +2385,27 @@ export default function Workspace({
           </div>
         </SidebarHeader>
         <SidebarContent className='px-4 workspace-sidebar-content'>
+          <p className='sidebar-label'>INVITES</p>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className='h-10 px-3 text-[14px]'
+                isActive={view === 'Invites'}
+                onClick={() => setView('Invites')}
+              >
+                <Mail />
+                <span>Invites</span>
+                {pendingInvites.length > 0 && (
+                  <span className='invite-pending-dot' aria-label='Pending invites' />
+                )}
+                {pendingInvites.length > 0 && (
+                  <span className='ml-auto text-xs rounded bg-[#f0eef7] px-1.5'>
+                    {pendingInvites.length}
+                  </span>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
           <p className='sidebar-label'>WORKSPACE</p>
           <SidebarMenu>
             {nav.map(([name, Icon]) => (
@@ -2484,24 +2505,6 @@ export default function Workspace({
           <button className='project-option' onClick={() => open('project', { due: future(14) })}>
             ＋ &nbsp; New project
           </button>
-          <p className='sidebar-label'>INVITES</p>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className='h-10 px-3 text-[14px]'
-                isActive={view === 'Invites'}
-                onClick={() => setView('Invites')}
-              >
-                <Mail />
-                <span>Invites</span>
-                {pendingInvites.length > 0 && (
-                  <span className='ml-auto text-xs rounded bg-[#f0eef7] px-1.5'>
-                    {pendingInvites.length}
-                  </span>
-                )}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
           <button
