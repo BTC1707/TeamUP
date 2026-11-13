@@ -1,5 +1,9 @@
 import { identity, runtime, sameOrigin, failure } from '@/lib/server';
-import { listNotifications, markNotificationsRead } from '@/lib/notifications';
+import {
+  clearNotifications,
+  listNotifications,
+  markNotificationsRead,
+} from '@/lib/notifications';
 
 export async function GET() {
   try {
@@ -25,6 +29,14 @@ export async function POST(req: Request) {
     }
     if (body.action === 'read' && Array.isArray(body.ids)) {
       await markNotificationsRead(runtime().DB, user.userId, body.ids);
+      return Response.json({ ok: true });
+    }
+    if (body.action === 'clearAll') {
+      await clearNotifications(runtime().DB, user.userId, 'all');
+      return Response.json({ ok: true });
+    }
+    if (body.action === 'clear' && Array.isArray(body.ids)) {
+      await clearNotifications(runtime().DB, user.userId, body.ids);
       return Response.json({ ok: true });
     }
     return Response.json({ error: 'Invalid notification action.' }, { status: 400 });

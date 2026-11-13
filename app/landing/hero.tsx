@@ -8,7 +8,7 @@ export function LandingHero() {
     <section className='landing-hero'>
       <div className='landing-hero-copy'>
         <p className='landing-brand'>
-          teamup<span>.</span>
+          TeamUP<span>.</span>
         </p>
 
         <h1>Plan group projects from first idea to final deadline.</h1>

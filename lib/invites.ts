@@ -148,7 +148,47 @@ export async function searchInvitees(db: D1Database, projectId: string, u: Actor
   };
 }
 
-/** Ask an existing account to join. They accept or decline from notifications. */
+export type PendingMemberInvite = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  inviterName: string;
+  createdAt: string;
+};
+
+/** Pending invites waiting for this account on the Invites tab. */
+export async function listPendingMemberInvites(db: D1Database, userId: string) {
+  const rows = await db
+    .prepare(
+      `SELECT i.id, i.project_id, i.created_at, p.title, u.name AS inviter_name
+       FROM project_member_invites i
+       JOIN projects p ON p.id=i.project_id
+       JOIN users u ON u.id=i.inviter_id
+       WHERE i.invitee_id=? AND i.status='pending'
+       ORDER BY i.created_at DESC
+       LIMIT 50`,
+    )
+    .bind(userId)
+    .all<{
+      id: string;
+      project_id: string;
+      created_at: string;
+      title: string;
+      inviter_name: string;
+    }>();
+  return rows.results.map(
+    (row) =>
+      ({
+        id: row.id,
+        projectId: row.project_id,
+        projectName: row.title,
+        inviterName: row.inviter_name,
+        createdAt: row.created_at,
+      }) satisfies PendingMemberInvite,
+  );
+}
+
+/** Ask an existing account to join. They accept or decline from the Invites tab. */
 export async function inviteMember(db: D1Database, projectId: string, u: Actor, inviteeId: string) {
   const project = await getProject(db, projectId, u);
   if (project.owner !== u.userId) throw new Error('NOT_FOUND');

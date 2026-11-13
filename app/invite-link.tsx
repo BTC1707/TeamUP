@@ -142,7 +142,7 @@ export default function InviteLink({ project }: { project: string }) {
       <div>
         <h2>Invite teammates</h2>
         <p className='subtext'>
-          Search by name, email, or username. They get a notification and can accept or decline.
+          Search by name, email, or username. They can accept or decline from their Invites tab.
         </p>
       </div>
       {error ? <p className='error'>{error}</p> : null}

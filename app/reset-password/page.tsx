@@ -47,7 +47,7 @@ export default function ResetPasswordPage() {
     <main className='auth-page'>
       <div className='auth-card'>
         <a className='auth-brand' href='/'>
-          teamup<span>.</span>
+          TeamUP<span>.</span>
         </a>
 
         <h1>Choose a new password</h1>

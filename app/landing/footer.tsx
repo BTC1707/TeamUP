@@ -11,9 +11,7 @@ export function LandingFooter() {
       <span aria-hidden='true'>·</span>
       <DemoLink>Demo</DemoLink>
       <span aria-hidden='true'>·</span>
-      <a className='landing-footer-admin' href='/admin'>
-        Admin
-      </a>
+      <a href='/admin'>Admin</a>
     </footer>
   );
 }

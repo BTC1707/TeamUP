@@ -277,12 +277,16 @@ export function replaceRows(
     out.push(q(`DELETE FROM group_members WHERE group_id=? AND ${guard}`, [group]));
     for (const m of assignMemberColors(p.members))
       out.push(
-        q(`INSERT INTO group_members(group_id,user_id,role,color) SELECT ?,?,?,? WHERE ${guard}`, [
-          group,
-          m.id,
-          m.id === owner ? 'owner' : 'member',
-          m.color,
-        ]),
+        q(
+          `INSERT INTO group_members(group_id,user_id,role,color,nickname) SELECT ?,?,?,?,? WHERE ${guard}`,
+          [
+            group,
+            m.id,
+            m.id === owner ? 'owner' : 'member',
+            m.color,
+            m.nickname?.trim().slice(0, 80) || null,
+          ],
+        ),
       );
   }
   out.push(q(`DELETE FROM tasks WHERE project_id=? AND ${guard}`, [p.id]));
@@ -349,13 +353,21 @@ export function replaceRows(
 async function memberColors(
   db: D1Database,
   groupId: string | null,
-  rows: { id: string; name: string; email: string; avatar_key?: string | null; color?: string | null }[],
+  rows: {
+    id: string;
+    name: string;
+    email: string;
+    avatar_key?: string | null;
+    color?: string | null;
+    nickname?: string | null;
+  }[],
 ) {
   const current = rows.map((member) => ({
     id: member.id,
     name: member.name,
     email: member.email,
     color: member.color || undefined,
+    ...(member.nickname?.trim() ? { nickname: member.nickname.trim() } : {}),
     ...(member.avatar_key ? { avatarUrl: avatarUrlFor(member.id, member.avatar_key) } : {}),
   }));
   const assigned = assignMemberColors(current);
@@ -378,7 +390,7 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
   const results = await db.batch([
     db
       .prepare(
-        'SELECT u.id,u.name,u.email,u.avatar_key,g.color FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
+        'SELECT u.id,u.name,u.email,u.avatar_key,g.color,g.nickname FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
       )
       .bind(r.group_id),
     db.prepare('SELECT * FROM tasks WHERE project_id=? ORDER BY due_date,id').bind(id),

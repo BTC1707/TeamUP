@@ -37,6 +37,8 @@ import {
   LogOut,
   Layers,
   FileText,
+  Paperclip,
+  Mail,
   Download,
   Settings,
   ArrowRight,
@@ -98,7 +100,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
-import { emptyProject, future, type Project, type Task, type Member } from '@/lib/model';
+import { emptyProject, future, memberLabel, type Project, type Task, type Member } from '@/lib/model';
 import { workspacePathByView, workspaceViewByPath } from '@/lib/workspace-routes';
 import {
   localNudgeNotification,
@@ -107,7 +109,7 @@ import {
 } from '@/lib/notifications';
 const nav = [
   ['Overview', LayoutDashboard],
-  ['Assignment chat', Sparkles],
+  ['AI planning', Sparkles],
   ['My tasks', CheckSquare],
   ['Milestones', Flag],
   ['Availability', CalendarDays],
@@ -123,12 +125,20 @@ const PAGE_HELP: Record<string, { description: string; tips: string[] }> = {
       'Use the AI planner to turn an assignment brief into suggested tasks when AI is connected.',
     ],
   },
-  'Assignment chat': {
-    description: 'Use AI to ask questions about your assignment or get a draft project plan.',
+  'AI planning': {
+    description: 'Talk with AI about your assignment, ask questions, or draft a project plan.',
     tips: [
       'Share the assignment details or ask a question to get started.',
       'Review and edit suggested tasks and milestones before adding them to the project.',
-      'AI features are available when the workspace has an AI provider connected.',
+      'This is a private AI thread for you — not a chat with teammates.',
+    ],
+  },
+  Invites: {
+    description: 'Accept or decline invitations to join someone else’s project.',
+    tips: [
+      'Pending invites are listed on this page.',
+      'Accepting an invite adds the project to Your projects.',
+      'Project owners send invites from the Team page.',
     ],
   },
   'My tasks': {
@@ -168,7 +178,7 @@ const PAGE_HELP: Record<string, { description: string; tips: string[] }> = {
     description: 'See who is working on the project and manage project invitations.',
     tips: [
       'Check member task counts to see how work is distributed.',
-      'Project owners can invite teammates; invitees accept from their notifications or invitation link.',
+      'Project owners can invite teammates; invitees accept from the Invites tab.',
       'Use the three-dot menu beside a project in the sidebar to edit its details and reminders.',
     ],
   },
@@ -446,6 +456,8 @@ export default function Workspace({
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const projectPhotoInputRef = useRef<HTMLInputElement>(null);
   const milestonePhotoInputRef = useRef<HTMLInputElement>(null);
+  const planFileInputRef = useRef<HTMLInputElement>(null);
+  const createRubricInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(true);
   const [startupNoticeReady, setStartupNoticeReady] = useState(false);
   const [showStartupNotice, setShowStartupNotice] = useState(false);
@@ -490,6 +502,15 @@ export default function Workspace({
   const [files, setFiles] = useState<any[]>([]);
   const [aiReady, setAiReady] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<
+    {
+      id: string;
+      projectId: string;
+      projectName: string;
+      inviterName: string;
+      createdAt: string;
+    }[]
+  >([]);
   const [notifOpen, setNotifOpen] = useState(false);
   const [plan, setPlan] = useState<SuggestedPlan | null>(null);
   const [requirements, setRequirements] = useState('');
@@ -764,6 +785,19 @@ export default function Workspace({
     }
   }
 
+  async function loadPendingInvites() {
+    if (localOnly || demoMode) {
+      setPendingInvites([]);
+      return;
+    }
+    try {
+      const data = await api('/api/invites?pending=1');
+      setPendingInvites(Array.isArray(data.invites) ? data.invites : []);
+    } catch {
+      // Keep the last known invites if the request fails.
+    }
+  }
+
   async function markNotifications(action: 'read' | 'readAll', ids?: string[]) {
     if (localOnly || demoMode) {
       setNotifications((current) =>
@@ -789,8 +823,33 @@ export default function Workspace({
     }
   }
 
-  async function respondToInvite(note: AppNotification, decision: 'accept' | 'reject') {
-    const inviteId = note.meta.inviteId;
+  async function clearNotificationsList(action: 'clear' | 'clearAll', ids?: string[]) {
+    if (localOnly || demoMode) {
+      setNotifications((current) =>
+        action === 'clearAll' ? [] : current.filter((n) => !(ids || []).includes(n.id)),
+      );
+      return;
+    }
+    try {
+      await api('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(action === 'clearAll' ? { action } : { action, ids }),
+      });
+      setNotifications((current) =>
+        action === 'clearAll' ? [] : current.filter((n) => !(ids || []).includes(n.id)),
+      );
+      toast.success('Notifications cleared.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not clear notifications.');
+    }
+  }
+
+  async function respondToInvite(
+    inviteId: string,
+    decision: 'accept' | 'reject',
+    details?: { actorName?: string; projectName?: string },
+  ) {
     if (!inviteId) return;
     try {
       await api('/api/invites', {
@@ -799,12 +858,13 @@ export default function Workspace({
         body: JSON.stringify({ action: 'respond', inviteId, decision }),
       });
       const state = decision === 'accept' ? 'accepted' : 'rejected';
-      const actorName = note.meta.actorName || '';
-      const projectName = note.meta.projectName || '';
+      const actorName = details?.actorName || '';
+      const projectName = details?.projectName || '';
       const inviteLabel = actorName ? `${actorName}'s invite` : 'an invite';
+      setPendingInvites((current) => current.filter((invite) => invite.id !== inviteId));
       setNotifications((current) =>
         current.map((item) =>
-          item.id === note.id
+          item.meta.inviteId === inviteId && item.type === 'project_invite'
             ? {
                 ...item,
                 read: true,
@@ -1203,9 +1263,16 @@ export default function Workspace({
         .catch((e) => toast.error(e.message));
   }, [view, project.id, localOnly]);
   useEffect(() => {
+    if (view === 'Invites' && !localOnly && !demoMode) void loadPendingInvites();
+  }, [view, localOnly, demoMode]);
+  useEffect(() => {
     if (localOnly || demoMode || !user?.id) return;
     void loadNotifications();
-    const timer = window.setInterval(() => void loadNotifications(), 45000);
+    void loadPendingInvites();
+    const timer = window.setInterval(() => {
+      void loadNotifications();
+      void loadPendingInvites();
+    }, 45000);
     return () => window.clearInterval(timer);
   }, [localOnly, demoMode, user?.id]);
   useEffect(() => {
@@ -1277,6 +1344,42 @@ export default function Workspace({
     } else {
       setDraft(data);
     }
+  }
+
+  function openAccount() {
+    const self = user ? project.members.find((member) => member.id === user.id) : undefined;
+    open('profile', {
+      ...user,
+      timeZone: user?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      projectNickname: self?.nickname || '',
+    });
+  }
+
+  function applyNicknames(name: string, projectNickname: string) {
+    const userId = user?.id;
+    const nickname = projectNickname.trim() || undefined;
+    setUser((current) => (current ? { ...current, name } : current));
+    if (!userId) return;
+    const patch = (entry: Project) => ({
+      ...entry,
+      members: entry.members.map((member) =>
+        member.id === userId
+          ? {
+              ...member,
+              name,
+              nickname: entry.id === project.id ? nickname : member.nickname,
+            }
+          : member,
+      ),
+    });
+    setProject((current) => patch(current));
+    setProjects((current) => current.map(patch));
+  }
+
+  function shownName() {
+    if (!user) return '';
+    const self = project.members.find((member) => member.id === user.id);
+    return self ? memberLabel(self) : user.name;
   }
 
   async function removeProjectById(id: string, name: string, version: number) {
@@ -2069,7 +2172,19 @@ export default function Workspace({
       ok = await save({ ...project, reminderHours: Number(draft.hours) });
     }
     if (modal === 'profile' && localOnly) {
-      setUser((u) => (u ? { ...u, ...draft } : u));
+      const name = String(draft.name || '')
+        .trim()
+        .replace(/\s+/g, ' ');
+      if (!name) {
+        setError('Enter a nickname.');
+        return;
+      }
+      const { projectNickname: _projectNickname, nudgeMessage: _nudgeMessage, ...profileFields } =
+        draft;
+      setUser((current) =>
+        current ? { ...current, ...profileFields, name, avatarUrl: current.avatarUrl } : current,
+      );
+      applyNicknames(name, String(draft.projectNickname || ''));
       setModal('');
       toast.success('Local profile updated (not saved to the cloud).');
       return;
@@ -2077,21 +2192,38 @@ export default function Workspace({
     if (modal === 'profile') {
       setBusy(true);
       try {
-        const { avatarUrl: _avatarUrl, nudgeMessage: _nudgeMessage, ...profileFields } = draft;
+        const {
+          avatarUrl: _avatarUrl,
+          nudgeMessage: _nudgeMessage,
+          projectNickname: _projectNickname,
+          ...profileFields
+        } = draft;
+        const name = String(draft.name || '')
+          .trim()
+          .replace(/\s+/g, ' ');
+        const projectNickname = String(draft.projectNickname || '').trim();
         await api('/api/workspace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'profile', ...profileFields }),
+          body: JSON.stringify({
+            action: 'profile',
+            ...profileFields,
+            name,
+            projectId: project.id || undefined,
+            projectNickname,
+          }),
         });
         setUser((u) =>
           u
             ? {
                 ...u,
                 ...profileFields,
+                name,
                 avatarUrl: u.avatarUrl,
               }
             : u,
         );
+        applyNicknames(name, projectNickname);
         ok = true;
       } catch (e) {
         setError((e as Error).message);
@@ -2133,7 +2265,7 @@ export default function Workspace({
             {t.status === 'progress' ? 'In progress' : t.status === 'done' ? 'Completed' : 'To do'}
           </span>
           <PersonAvatar
-            name={project.members.find((m) => m.id === t.assignee)?.name || '–'}
+            name={memberLabel(project.members.find((m) => m.id === t.assignee) || { name: '–' })}
             email={project.members.find((m) => m.id === t.assignee)?.email}
             avatarUrl={project.members.find((m) => m.id === t.assignee)?.avatarUrl}
             showInfo
@@ -2211,7 +2343,7 @@ export default function Workspace({
             <span className='brandmark'>
               <Layers size={23} />
             </span>
-            teamup<span style={{ color: '#8175d9' }}>.</span>
+            TeamUP<span style={{ color: '#8175d9' }}>.</span>
           </div>
         </SidebarHeader>
         <SidebarContent className='px-4 workspace-sidebar-content'>
@@ -2313,24 +2445,37 @@ export default function Workspace({
           <button className='project-option' onClick={() => open('project', { due: future(14) })}>
             ＋ &nbsp; New project
           </button>
+          <p className='sidebar-label'>INVITES</p>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                className='h-10 px-3 text-[14px]'
+                isActive={view === 'Invites'}
+                onClick={() => setView('Invites')}
+              >
+                <Mail />
+                <span>Invites</span>
+                {pendingInvites.length > 0 && (
+                  <span className='ml-auto text-xs rounded bg-[#f0eef7] px-1.5'>
+                    {pendingInvites.length}
+                  </span>
+                )}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
         </SidebarContent>
         <SidebarFooter>
           <button
             className='account'
-            onClick={() =>
-              open('profile', {
-                ...user,
-                timeZone: user?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-              })
-            }
+            onClick={openAccount}
           >
             <PersonAvatar
               className='avatar'
-              name={isLocalAdmin ? 'admin' : user?.username || user?.name || 'Guest'}
+              name={shownName() || 'Guest'}
               avatarUrl={user?.avatarUrl}
             />
             <span className='text-left'>
-              {isLocalAdmin ? 'admin' : user?.username || user?.name || 'Your workspace'}
+              {shownName() || 'Your workspace'}
               <small>
                 {isLocalAdmin
                   ? 'Local admin account'
@@ -2350,7 +2495,7 @@ export default function Workspace({
           <div className='flex gap-3 items-center'>
             {/* Sidebar toggle for mobile, tablet, and desktop layouts. */}
             <SidebarTrigger className='mobile-sidebar-trigger' />
-            <span className='mobile-title'>teamup.</span>
+            <span className='mobile-title'>TeamUP.</span>
           </div>
           <div className='top-actions'>
             <span className='muted text-[13px] hidden sm:block' suppressHydrationWarning>
@@ -2373,7 +2518,10 @@ export default function Workspace({
               open={notifOpen}
               onOpenChange={(open) => {
                 setNotifOpen(open);
-                if (open) void loadNotifications();
+                if (open) {
+                  void loadNotifications();
+                  void loadPendingInvites();
+                }
               }}
             >
               <PopoverTrigger asChild>
@@ -2398,15 +2546,26 @@ export default function Workspace({
               <PopoverContent align='end' className='notification-popover w-[340px] p-0'>
                 <div className='notification-popover-head'>
                   <strong>Notifications</strong>
-                  {notifications.some((n) => !n.read) ? (
-                    <button
-                      type='button'
-                      className='btn subtle'
-                      onClick={() => void markNotifications('readAll')}
-                    >
-                      Mark all read
-                    </button>
-                  ) : null}
+                  <span className='notification-popover-actions'>
+                    {notifications.some((n) => !n.read) ? (
+                      <button
+                        type='button'
+                        className='btn subtle'
+                        onClick={() => void markNotifications('readAll')}
+                      >
+                        Mark all read
+                      </button>
+                    ) : null}
+                    {notifications.length ? (
+                      <button
+                        type='button'
+                        className='btn subtle'
+                        onClick={() => void clearNotificationsList('clearAll')}
+                      >
+                        Clear all
+                      </button>
+                    ) : null}
+                  </span>
                 </div>
                 <div className='notification-list'>
                   {!notifications.length ? (
@@ -2414,61 +2573,60 @@ export default function Workspace({
                   ) : (
                     notifications.map((n) => {
                       const pendingInvite =
-                        n.type === 'project_invite' && n.meta.inviteId && n.meta.state !== 'accepted' && n.meta.state !== 'rejected';
+                        n.type === 'project_invite' &&
+                        n.meta.inviteId &&
+                        n.meta.state !== 'accepted' &&
+                        n.meta.state !== 'rejected';
                       return (
-                      <div
-                        key={n.id}
-                        className={`notification-item${n.read ? '' : ' unread'}`}
-                        onClick={() => {
-                          if (!n.read) void markNotifications('read', [n.id]);
-                          if (pendingInvite) return;
-                          if (n.projectId && n.projectId !== project.id) {
-                            const target = projects.find((p) => p.id === n.projectId);
-                            if (target) selectProject(target);
-                          }
-                          setNotifOpen(false);
-                        }}
-                      >
-                        <span className='notification-item-title'>{n.title}</span>
-                        <span className='notification-item-body'>{n.body}</span>
-                        <span className='notification-item-time'>
-                          {new Date(n.createdAt).toLocaleString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                        </span>
-                        {pendingInvite ? (
-                          <span className='notification-actions'>
-                            <button
-                              type='button'
-                              className='btn primary'
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void respondToInvite(n, 'accept');
-                              }}
-                            >
-                              Accept
-                            </button>
-                            <button
-                              type='button'
-                              className='btn subtle'
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                void respondToInvite(n, 'reject');
-                              }}
-                            >
-                              Decline
-                            </button>
+                        <div
+                          key={n.id}
+                          className={`notification-item${n.read ? '' : ' unread'}`}
+                          onClick={() => {
+                            if (!n.read) void markNotifications('read', [n.id]);
+                            if (pendingInvite) {
+                              setNotifOpen(false);
+                              setView('Invites');
+                              return;
+                            }
+                            if (n.projectId && n.projectId !== project.id) {
+                              const target = projects.find((p) => p.id === n.projectId);
+                              if (target) selectProject(target);
+                            }
+                            setNotifOpen(false);
+                          }}
+                        >
+                          <span className='notification-item-title'>{n.title}</span>
+                          <span className='notification-item-body'>
+                            {pendingInvite
+                              ? `${n.body} Open Invites to accept or decline.`
+                              : n.body}
                           </span>
-                        ) : null}
-                      </div>
+                          <span className='notification-item-time'>
+                            {new Date(n.createdAt).toLocaleString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
                       );
                     })
                   )}
                 </div>
                 <div className='notification-popover-foot'>
+                  {pendingInvites.length ? (
+                    <button
+                      type='button'
+                      className='btn subtle'
+                      onClick={() => {
+                        setNotifOpen(false);
+                        setView('Invites');
+                      }}
+                    >
+                      Open Invites ({pendingInvites.length})
+                    </button>
+                  ) : null}
                   <button
                     type='button'
                     className='btn subtle'
@@ -2487,15 +2645,10 @@ export default function Workspace({
               className='profile-avatar-button'
               aria-label='Open profile settings'
               title='Profile settings'
-              onClick={() =>
-                open('profile', {
-                  ...user,
-                  timeZone: user?.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone,
-                })
-              }
+              onClick={openAccount}
             >
               <PersonAvatar
-                name={user?.username || user?.name || 'You'}
+                name={shownName() || 'You'}
                 avatarUrl={user?.avatarUrl}
               />
             </button>
@@ -2598,7 +2751,7 @@ export default function Workspace({
                   user ? (
                       <>
                         <span className='overview-greeting-lead'>Let’s make progress,</span>{' '}
-                        <span className='overview-greeting-name'>{user.name.split(' ')[0]}.</span>
+                        <span className='overview-greeting-name'>{(shownName() || user.name).split(' ')[0]}.</span>
                       </>
                     ) : (
                       'Let’s make progress.'
@@ -2607,20 +2760,19 @@ export default function Workspace({
                   view
                 )}
               </h1>
-              <p className='subtext'>
-                {view === 'Overview'
-                  ? 'Your team, your tasks, and the next step forward.'
-                  : project.name}
-              </p>
+              {view === 'Overview' ? (
+                <p className='subtext'>Your team, your tasks, and the next step forward.</p>
+              ) : null}
             </div>
             {view !== 'Availability' &&
               view !== 'Files' &&
-              view !== 'Team' && (
+              view !== 'Team' &&
+              view !== 'Invites' && (
               <button
                 className='btn primary'
                 data-tutorial-step='1'
                 onClick={() => {
-                  if (view === 'Assignment chat') {
+                  if (view === 'AI planning') {
                     if (requireProject()) {
                       open('planner');
                       setRequirements('');
@@ -2631,7 +2783,7 @@ export default function Workspace({
                 }}
               >
                 <Plus size={16} />
-                {view === 'Assignment chat'
+                {view === 'AI planning'
                   ? 'AI planner'
                   : view === 'Milestones'
                     ? 'Add milestone'
@@ -2715,7 +2867,7 @@ export default function Workspace({
           )}
           {canConfigureAI && !aiReady && (
             <div className='notice flex justify-between gap-3 items-center'>
-              <span>Connect AI to turn on assignment chat and planning.</span>
+              <span>Connect AI to turn on AI planning.</span>
               <button className='btn primary' onClick={() => open('ai-settings')}>
                 Connect AI
               </button>
@@ -2747,7 +2899,7 @@ export default function Workspace({
                         {project.members.slice(0, 4).map((m) => (
                           <PersonAvatar
                             key={m.id}
-                            name={m.name}
+                            name={memberLabel(m)}
                             email={m.email}
                             avatarUrl={m.avatarUrl}
                             showInfo
@@ -2842,13 +2994,13 @@ export default function Workspace({
                       return (
                         <div className='member-row' key={m.id}>
                           <PersonAvatar
-                            name={m.name}
+                            name={memberLabel(m)}
                             email={m.email}
                             avatarUrl={m.avatarUrl}
                             showInfo
                           />
                           <div className='member-name'>
-                            {m.name}
+                            {memberLabel(m)}
                             <small className='block'>{assigned.length} assigned tasks</small>
                           </div>
                           <Progress
@@ -2919,7 +3071,7 @@ export default function Workspace({
                     >
                       Plan my project <ArrowUpRight />
                     </button>
-                    <button className='btn !mt-2' onClick={() => setView('Assignment chat')}>
+                    <button className='btn !mt-2' onClick={() => setView('AI planning')}>
                       Ask AI a question <Sparkles size={15} />
                     </button>
                   </section>
@@ -2927,7 +3079,72 @@ export default function Workspace({
               </div>
             </>
           )}
-          {!isDemo && view === 'Assignment chat' && (
+          {view === 'Invites' && (
+            <section className='panel'>
+              <div className='panel-heading'>
+                <div>
+                  <h2>Invites</h2>
+                  <p className='subtext'>
+                    {pendingInvites.length
+                      ? 'You have pending invites.'
+                      : 'You have no pending invites.'}
+                  </p>
+                </div>
+              </div>
+              {pendingInvites.length > 0 && (
+                <div className='pending-invite-list'>
+                  {pendingInvites.map((invite) => (
+                    <div className='pending-invite-row' key={invite.id}>
+                      <div className='pending-invite-copy'>
+                        <strong>{invite.projectName}</strong>
+                        <small className='block'>
+                          {invite.inviterName
+                            ? `${invite.inviterName} invited you`
+                            : 'You were invited'}
+                          {' · '}
+                          {new Date(invite.createdAt).toLocaleString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit',
+                          })}
+                        </small>
+                      </div>
+                      <div className='pending-invite-actions'>
+                        <button
+                          type='button'
+                          className='btn primary'
+                          disabled={busy}
+                          onClick={() =>
+                            void respondToInvite(invite.id, 'accept', {
+                              actorName: invite.inviterName,
+                              projectName: invite.projectName,
+                            })
+                          }
+                        >
+                          Accept
+                        </button>
+                        <button
+                          type='button'
+                          className='btn'
+                          disabled={busy}
+                          onClick={() =>
+                            void respondToInvite(invite.id, 'reject', {
+                              actorName: invite.inviterName,
+                              projectName: invite.projectName,
+                            })
+                          }
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+          {!isDemo && view === 'AI planning' && (
             <AssignmentChat
               key={project.id + (localOnly ? ':local' : '')}
               project={project}
@@ -3055,7 +3272,7 @@ export default function Workspace({
                 {memberAvailability.map(({ member, slots, color }) => {
                   const submitted = slots.size > 0;
                   const selected = availabilityFocusId === member.id;
-                  const firstName = member.name.trim().split(/\s+/)[0] || member.name;
+                  const firstName = memberLabel(member).trim().split(/\s+/)[0] || memberLabel(member);
                   return (
                     <button
                       key={member.id}
@@ -3069,8 +3286,8 @@ export default function Workspace({
                       aria-pressed={selected}
                       title={
                         submitted
-                          ? `${member.name} has shared hours`
-                          : `${member.name} hasn’t shared hours yet`
+                          ? `${memberLabel(member)} has shared hours`
+                          : `${memberLabel(member)} hasn’t shared hours yet`
                       }
                       onClick={() =>
                         setAvailabilityFocusId((current) =>
@@ -3078,7 +3295,7 @@ export default function Workspace({
                         )
                       }
                     >
-                      <AvatarFace name={member.name} avatarUrl={member.avatarUrl} />
+                      <AvatarFace name={memberLabel(member)} avatarUrl={member.avatarUrl} />
                       <span className='availability-person-name'>{firstName}</span>
                       <i className='availability-person-status' aria-hidden='true' />
                     </button>
@@ -3277,7 +3494,7 @@ export default function Workspace({
                             : undefined;
                         const showBusy = googleBusy && !showSelf && visibleTeamColors.length === 0;
                         const freeLabel = freeHere.length
-                          ? `${freeHere.map((entry) => entry.member.name).join(', ')} free`
+                          ? `${freeHere.map((entry) => memberLabel(entry.member)).join(', ')} free`
                           : 'No one free';
                         return (
                           <button
@@ -3484,16 +3701,16 @@ export default function Workspace({
                       type='button'
                       className='member-row member-row-button'
                       key={m.id}
-                      onClick={() => open('teammate', m)}
+                      onClick={() => open('teammate', { ...m, name: memberLabel(m) })}
                     >
                       <PersonAvatar
-                        name={m.name}
+                        name={memberLabel(m)}
                         email={m.email}
                         avatarUrl={m.avatarUrl}
                         showInfo
                       />
                       <div className='member-name'>
-                        {m.name}
+                        {memberLabel(m)}
                         <small className='block'>{m.email}</small>
                       </div>
                       <small>
@@ -3693,7 +3910,9 @@ export default function Workspace({
                       ? 'Teammate name'
                       : modal === 'rename-file'
                         ? 'File name'
-                        : 'Name'}
+                        : modal === 'profile'
+                          ? 'Nickname'
+                          : 'Name'}
                   <input
                     required
                     maxLength={['project', 'rename-file'].includes(modal) ? 200 : 100}
@@ -3704,15 +3923,35 @@ export default function Workspace({
                         ? 'e.g. Marketing research project'
                         : modal === 'member'
                           ? 'e.g. Alex'
-                          : modal === 'rename-file'
-                            ? 'e.g. Assignment brief.pdf'
-                            : 'Your name'
+                      : modal === 'rename-file'
+                        ? 'e.g. Assignment brief.pdf'
+                        : modal === 'profile'
+                          ? 'What teammates call you'
+                          : 'Your name'
                     }
                   />
                 </label>
               )}
               {modal === 'profile' && (
                 <>
+                  {project.id ? (
+                    <label>
+                      Nickname on {project.name}
+                      <input
+                        maxLength={80}
+                        value={draft.projectNickname || ''}
+                        onChange={(e) => setDraft({ ...draft, projectNickname: e.target.value })}
+                        placeholder='Same as your nickname'
+                      />
+                    </label>
+                  ) : null}
+                  {project.id ? (
+                    <p className='form-note'>
+                      Teammates on this project see this name. Leave it blank to use your nickname.
+                    </p>
+                  ) : (
+                    <p className='form-note'>Teammates see this name on your projects.</p>
+                  )}
                   <div className='profile-photo-row'>
                     <PersonAvatar
                       className='avatar avatar-lg'
@@ -3908,20 +4147,35 @@ export default function Workspace({
                           placeholder='Paste the assignment rubric or brief for AI to break into tasks…'
                         />
                       </label>
-                      <label>
-                        Upload rubric files (optional)
+                      <div className='attach-files'>
+                        <span id='create-rubric-label'>Upload rubric files (optional)</span>
+                        <button
+                          type='button'
+                          className='btn'
+                          onClick={() => createRubricInputRef.current?.click()}
+                        >
+                          <Paperclip size={16} />
+                          {Array.isArray(draft.rubricFiles) && draft.rubricFiles.length
+                            ? 'Change files'
+                            : 'Attach files'}
+                        </button>
                         <input
+                          ref={createRubricInputRef}
+                          id='create-rubric-files'
                           type='file'
                           multiple
                           accept={PLAN_FILE_ACCEPT}
-                          onChange={(e) =>
+                          hidden
+                          aria-labelledby='create-rubric-label'
+                          onChange={(e) => {
                             setDraft({
                               ...draft,
                               rubricFiles: Array.from(e.target.files || []).slice(0, 3),
-                            })
-                          }
+                            });
+                            e.target.value = '';
+                          }}
                         />
-                      </label>
+                      </div>
                       <p className='form-note'>
                         PDF, DOCX, images, or text — up to 3 files, 5 MB each. If AI is connected,
                         we’ll suggest tasks after create for you to review. You can add a project
@@ -4036,7 +4290,7 @@ export default function Workspace({
                       onChange={(v) => setDraft({ ...draft, assignee: v })}
                       options={[
                         { value: 'none', label: 'Unassigned' },
-                        ...project.members.map((m) => ({ value: m.id, label: m.name })),
+                        ...project.members.map((m) => ({ value: m.id, label: memberLabel(m) })),
                       ]}
                     />
                   </label>
@@ -4301,17 +4555,14 @@ export default function Workspace({
                                 ),
                               });
                               if (ok) {
-                                const name =
-                                  nextAssignee === ''
-                                    ? 'Unassigned'
-                                    : project.members.find((m) => m.id === nextAssignee)?.name ||
-                                      'teammate';
+                                const person = project.members.find((m) => m.id === nextAssignee);
+                                const name = nextAssignee === '' ? 'Unassigned' : person ? memberLabel(person) : 'teammate';
                                 toast.success(`Moved “${t.title}” to ${name}.`);
                               }
                             }}
                             options={[
                               { value: 'none', label: 'Unassigned' },
-                              ...project.members.map((m) => ({ value: m.id, label: m.name })),
+                              ...project.members.map((m) => ({ value: m.id, label: memberLabel(m) })),
                             ]}
                           />
                         </label>
@@ -4388,13 +4639,28 @@ export default function Workspace({
                       maxLength={30000}
                     />
                   </label>
-                  <label>
-                    Upload rubric files
+                  <div className='attach-files'>
+                    <span id='plan-rubric-label'>Upload rubric files</span>
+                    <button
+                      type='button'
+                      className='btn'
+                      disabled={busy || !project.id}
+                      onClick={() => planFileInputRef.current?.click()}
+                    >
+                      <Paperclip size={16} />
+                      {(localOnly ? planFiles.length : planFileIds.length)
+                        ? 'Change files'
+                        : 'Attach files'}
+                    </button>
                     <input
+                      ref={planFileInputRef}
+                      id='plan-rubric-files'
                       type='file'
                       multiple
                       accept={PLAN_FILE_ACCEPT}
+                      hidden
                       disabled={busy || !project.id}
+                      aria-labelledby='plan-rubric-label'
                       onChange={async (e) => {
                         const selected = Array.from(e.target.files || []).slice(0, 3);
                         if (!selected.length || !project.id) return;
@@ -4423,7 +4689,7 @@ export default function Workspace({
                         }
                       }}
                     />
-                  </label>
+                  </div>
                   {!!(localOnly ? planFiles.length : planFileIds.length) && (
                     <p className='form-note'>
                       {(localOnly ? planFiles.length : planFileIds.length)} file
