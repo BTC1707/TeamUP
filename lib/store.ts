@@ -280,7 +280,7 @@ export function replaceRows(
         q(`INSERT INTO group_members(group_id,user_id,role,color) SELECT ?,?,?,? WHERE ${guard}`, [
           group,
           m.id,
-          m.id === owner ? 'owner' : 'member',
+          m.id === owner ? 'owner' : m.role === 'admin' ? 'admin' : 'member',
           m.color,
         ]),
       );
@@ -349,12 +349,13 @@ export function replaceRows(
 async function memberColors(
   db: D1Database,
   groupId: string | null,
-  rows: { id: string; name: string; email: string; avatar_key?: string | null; color?: string | null }[],
+  rows: { id: string; name: string; email: string; avatar_key?: string | null; color?: string | null; role?: string | null }[],
 ) {
   const current = rows.map((member) => ({
     id: member.id,
     name: member.name,
     email: member.email,
+    role: member.role === 'owner' || member.role === 'admin' ? member.role : 'member',
     color: member.color || undefined,
     ...(member.avatar_key ? { avatarUrl: avatarUrlFor(member.id, member.avatar_key) } : {}),
   }));
@@ -378,7 +379,7 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
   const results = await db.batch([
     db
       .prepare(
-        'SELECT u.id,u.name,u.email,u.avatar_key,g.color FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
+        'SELECT u.id,u.name,u.email,u.avatar_key,g.color,g.role FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY CASE g.role WHEN \'owner\' THEN 0 WHEN \'admin\' THEN 1 ELSE 2 END,u.name',
       )
       .bind(r.group_id),
     db.prepare('SELECT * FROM tasks WHERE project_id=? ORDER BY due_date,id').bind(id),

@@ -1,4 +1,5 @@
 import { identity, runtime, failure, sameOrigin, projectFor } from '@/lib/server';
+import { projectRole } from '@/lib/project-permissions';
 import {
   isAllowedProjectMediaType,
   PROJECT_MEDIA_MAX_BYTES,
@@ -45,7 +46,9 @@ export async function POST(req: Request) {
     const projectId = String(form.get('project') || '').slice(0, 100);
     const file = form.get('file');
     if (!projectId) return Response.json({ error: 'Choose a project first.' }, { status: 400 });
-    await projectFor(projectId, user);
+    const project = await projectFor(projectId, user);
+    if (!['owner', 'admin'].includes(projectRole(project, user.userId) || ''))
+      throw new Error('FORBIDDEN');
 
     if (!(file instanceof File) || !file.size)
       return Response.json({ error: 'Choose a photo before uploading.' }, { status: 400 });
@@ -92,7 +95,9 @@ export async function DELETE(req: Request) {
     const body = (await req.json().catch(() => ({}))) as { project?: unknown };
     const projectId = typeof body.project === 'string' ? body.project.slice(0, 100) : '';
     if (!projectId) return Response.json({ error: 'Choose a project first.' }, { status: 400 });
-    await projectFor(projectId, user);
+    const project = await projectFor(projectId, user);
+    if (!['owner', 'admin'].includes(projectRole(project, user.userId) || ''))
+      throw new Error('FORBIDDEN');
 
     const { DB, BUCKET } = runtime();
     const existing = await DB.prepare('SELECT photo_key FROM projects WHERE id=?')

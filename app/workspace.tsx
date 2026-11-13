@@ -15,6 +15,7 @@ import InviteLink from './invite-link';
 import Tutorial from './tutorial';
 import PlanReview, { type SuggestedPlan } from './plan-review';
 import { practiceProject, demoUser } from '@/lib/demo';
+import { projectRole } from '@/lib/project-permissions';
 import {
   clearLocalAdminSession,
   hasLocalAdminSession,
@@ -677,6 +678,9 @@ export default function Workspace({
   const percent = Math.round((done / Math.max(1, project.tasks.length)) * 100);
   const mine = project.tasks.filter((t) => t.assignee === me && t.status !== 'done');
   const isOwner = !isDemo && project.owner === user?.id;
+  const currentRole = projectRole(project, user?.id);
+  const canManageAllTasks = currentRole === 'owner' || currentRole === 'admin';
+  const canEditTask = (task: Task) => canManageAllTasks || task.assignee === user?.id;
 
   function offerTutorialIfNeeded(seen?: boolean) {
     if (seen || hasLocalTutorialSeen()) return;
@@ -1524,6 +1528,37 @@ export default function Workspace({
       setBusy(false);
     }
   }
+  async function saveProjectRoles() {
+    if (!isOwner || !draft.id) return;
+    const roles = (draft.members || [])
+      .filter((member: Member) => member.id !== draft.owner)
+      .map((member: Member) => ({ id: member.id, role: member.role === 'admin' ? 'admin' : 'member' }));
+    setBusy(true);
+    try {
+      if (localOnly || demoMode) {
+        const updated = { ...project, members: project.members.map((member) => ({
+          ...member,
+          role: roles.find((entry) => entry.id === member.id)?.role || (member.id === project.owner ? 'owner' : 'member'),
+        })) };
+        setProject(updated);
+        setProjects((items) => items.map((item) => item.id === updated.id ? updated : item));
+        setDraft((value: any) => ({ ...value, members: updated.members }));
+      } else {
+        const result = await api('/api/workspace', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'roles', project: draft.id, roles }),
+        });
+        setProject(result.project);
+        setProjects((items) => items.map((item) => item.id === result.project.id ? result.project : item));
+        setDraft((value: any) => ({ ...value, members: result.project.members }));
+      }
+      toast.success('Teammate roles updated.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not update teammate roles.');
+    } finally {
+      setBusy(false);
+    }
+  }
   function requireProject() {
     if (isDemo) {
       open('project', { name: '', due: future(14), course: '', description: '' });
@@ -1882,6 +1917,7 @@ export default function Workspace({
   }, [view, demoMode, localOnly, project.id, user?.id]);
   async function setStatus(t: Task) {
     if (!requireProject()) return;
+    if (!canEditTask(t)) return;
     if (
       await save({
         ...project,
@@ -2116,12 +2152,13 @@ export default function Workspace({
           <Checkbox
             aria-label={`Mark ${t.title} ${t.status === 'done' ? 'incomplete' : 'complete'}`}
             checked={t.status === 'done'}
-            disabled={busy}
+            disabled={busy || !canEditTask(t)}
             onCheckedChange={() => setStatus(t)}
           />
           <button
             className='task-title text-left'
             onClick={() => {
+              if (!canEditTask(t)) return;
               if (requireProject()) open('task', t);
             }}
           >
@@ -2301,6 +2338,9 @@ export default function Workspace({
                           description: p.description,
                           due: p.due,
                           photoUrl: p.photoUrl,
+                          reminderHours: p.reminderHours,
+                          owner: p.owner,
+                          members: p.members,
                         });
                       }}
                     >
@@ -2577,7 +2617,7 @@ export default function Workspace({
               onAction={() => {
                 if (tour === 0) open('project', { due: future(14) });
                 if (tour === 1) {
-                  if (requireProject()) open('task', { due: future(1), status: 'todo' });
+                  if (requireProject()) open('task', { due: future(1), status: 'todo', assignee: canManageAllTasks ? '' : user?.id });
                 }
                 if (tour === 2) {
                   setView('My tasks');
@@ -2631,7 +2671,7 @@ export default function Workspace({
                     }
                   } else if (view === 'Milestones' && requireProject())
                     open('milestone', { due: project.due });
-                  else if (requireProject()) open('task', { due: future(1), status: 'todo' });
+                  else if (requireProject()) open('task', { due: future(1), status: 'todo', assignee: canManageAllTasks ? '' : user?.id });
                 }}
               >
                 <Plus size={16} />
@@ -3844,6 +3884,7 @@ export default function Workspace({
                     required
                     maxLength={modal === 'rename-file' ? 200 : 100}
                     value={draft.name || ''}
+                    readOnly={modal === 'project' && !!draft.id && !isOwner}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                     placeholder={
                       modal === 'project'
@@ -3934,7 +3975,7 @@ export default function Workspace({
               )}
               {modal === 'project' && (
                 <>
-                  <label>
+                  {(!draft.id || isOwner) && <label>
                     Course (optional)
                     <input
                       value={draft.course || ''}
@@ -3942,8 +3983,8 @@ export default function Workspace({
                       onChange={(e) => setDraft({ ...draft, course: e.target.value })}
                       placeholder='e.g. DES 240'
                     />
-                  </label>
-                  <label>
+                  </label>}
+                  {(!draft.id || isOwner) && <label>
                     Project description
                     <textarea
                       value={draft.description || ''}
@@ -3951,9 +3992,21 @@ export default function Workspace({
                       onChange={(e) => setDraft({ ...draft, description: e.target.value })}
                       placeholder='What is your group working toward?'
                     />
-                  </label>
+                  </label>}
                   {draft.id ? (
                     <>
+                      <section className='project-editor-roles' aria-label='Teammate permissions'>
+                        <div className='project-editor-roles-heading'><div><strong>Teammate permissions</strong><p>Everyone can see each teammate’s project role.</p></div></div>
+                        {(draft.members || project.members).map((member: Member) => {
+                          const role = member.id === draft.owner ? 'owner' : member.role || 'member';
+                          return <div className='project-role-row' key={member.id}>
+                            <div className='project-role-person'><PersonAvatar className='avatar' name={member.name} email={member.email} avatarUrl={member.avatarUrl}/><span><strong>{member.name}{member.id === user?.id ? ' (you)' : ''}</strong><small>{member.email}</small></span></div>
+                            {isOwner && role !== 'owner' ? <Picker value={role} onChange={(value) => setDraft({...draft, members:(draft.members || project.members).map((entry: Member) => entry.id === member.id ? {...entry, role: value as Member['role']} : entry)})} options={[{value:'member',label:'Member'},{value:'admin',label:'Admin'}]}/> : <span className={'project-role-badge '+role}>{role}</span>}
+                          </div>;
+                        })}
+                        {isOwner && <button type='button' className='btn' disabled={busy} onClick={() => void saveProjectRoles()}>Save role changes</button>}
+                        <p className='form-note'>Owners have full control and can delete the project. Admins can update the project image and manage everyone’s tasks. Members can manage their own tasks.</p>
+                      </section>
                       <div className='profile-photo-row'>
                         <span
                           className={
@@ -3970,7 +4023,7 @@ export default function Workspace({
                           <button
                             type='button'
                             className='btn'
-                            disabled={avatarBusy}
+                            disabled={avatarBusy || !['owner','admin'].includes(currentRole || '')}
                             onClick={() => projectPhotoInputRef.current?.click()}
                           >
                             {avatarBusy
@@ -3983,7 +4036,7 @@ export default function Workspace({
                             <button
                               type='button'
                               className='btn subtle'
-                              disabled={avatarBusy}
+                            disabled={avatarBusy || !['owner','admin'].includes(currentRole || '')}
                               onClick={() => void removeProjectPhoto(draft.id)}
                             >
                               Remove
@@ -4076,12 +4129,14 @@ export default function Workspace({
                     required
                     min={draft.id ? undefined : today}
                     value={draft.due || ''}
+                    readOnly={modal === 'project' && !!draft.id && !isOwner}
                     onChange={(e) => setDraft({ ...draft, due: e.target.value })}
                   />
                 </label>
               )}
               {modal === 'milestone' && draft.id && (
                 <>
+                  {!isOwner && <p className='form-note'>Only the project owner can edit milestones.</p>}
                   <div className='profile-photo-row'>
                     <span
                       className={'project-settings-photo' + (draft.photoUrl ? '' : ' empty')}
@@ -4096,7 +4151,7 @@ export default function Workspace({
                       <button
                         type='button'
                         className='btn'
-                        disabled={avatarBusy}
+                        disabled={avatarBusy || !isOwner}
                         onClick={() => milestonePhotoInputRef.current?.click()}
                       >
                         {avatarBusy
@@ -4109,7 +4164,7 @@ export default function Workspace({
                         <button
                           type='button'
                           className='btn subtle'
-                          disabled={avatarBusy}
+                        disabled={avatarBusy || !isOwner}
                           onClick={() => void removeMilestonePhoto(project.id, draft.id)}
                         >
                           Remove
@@ -4131,10 +4186,10 @@ export default function Workspace({
                     Assigned to
                     <Picker
                       value={draft.assignee || 'none'}
-                      onChange={(v) => setDraft({ ...draft, assignee: v })}
+                      onChange={(v) => { if (canManageAllTasks) setDraft({ ...draft, assignee: v }); }}
                       options={[
-                        { value: 'none', label: 'Unassigned' },
-                        ...project.members.map((m) => ({ value: m.id, label: m.name })),
+                        ...(canManageAllTasks ? [{ value: 'none', label: 'Unassigned' }] : []),
+                        ...project.members.filter((m) => canManageAllTasks || m.id === user?.id).map((m) => ({ value: m.id, label: m.name })),
                       ]}
                     />
                   </label>
@@ -4219,7 +4274,7 @@ export default function Workspace({
                   Sign in
                 </a>
               )}
-              <button disabled={busy || !user} className='btn primary' type='submit'>
+              <button disabled={busy || !user || (modal === 'project' && draft.id && !isOwner) || (modal === 'milestone' && !isOwner)} className='btn primary' type='submit'>
                 {busy
                   ? modal === 'member'
                     ? 'Sending…'
@@ -4385,7 +4440,7 @@ export default function Workspace({
                                 : 'To do'}
                           </small>
                         </div>
-                        <label className='teammate-reassign'>
+                        {canManageAllTasks && <label className='teammate-reassign'>
                           <span className='sr-only'>Move {t.title}</span>
                           <Picker
                             value={t.assignee || 'none'}
@@ -4412,11 +4467,11 @@ export default function Workspace({
                               ...project.members.map((m) => ({ value: m.id, label: m.name })),
                             ]}
                           />
-                        </label>
+                        </label>}
                         <button
                           type='button'
                           className='btn subtle'
-                          disabled={busy}
+                          disabled={busy || !canEditTask(t)}
                           onClick={() => open('task', t)}
                         >
                           Edit

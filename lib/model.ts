@@ -5,6 +5,7 @@ export type Member = {
   avatarUrl?: string;
   /** Stable calendar color, unique among people on this project. */
   color?: string;
+  role?: 'owner' | 'admin' | 'member';
 };
 export type Task = {
   id: string;

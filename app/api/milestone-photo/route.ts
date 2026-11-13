@@ -1,4 +1,5 @@
 import { identity, runtime, failure, sameOrigin, projectFor } from '@/lib/server';
+import { projectRole } from '@/lib/project-permissions';
 import {
   isAllowedProjectMediaType,
   PROJECT_MEDIA_MAX_BYTES,
@@ -50,7 +51,8 @@ export async function POST(req: Request) {
     const file = form.get('file');
     if (!projectId || !milestoneId)
       return Response.json({ error: 'Choose a milestone first.' }, { status: 400 });
-    await projectFor(projectId, user);
+    const project = await projectFor(projectId, user);
+    if (projectRole(project, user.userId) !== 'owner') throw new Error('FORBIDDEN');
 
     if (!(file instanceof File) || !file.size)
       return Response.json({ error: 'Choose a photo before uploading.' }, { status: 400 });
@@ -108,7 +110,8 @@ export async function DELETE(req: Request) {
     const milestoneId = typeof body.milestone === 'string' ? body.milestone.slice(0, 120) : '';
     if (!projectId || !milestoneId)
       return Response.json({ error: 'Choose a milestone first.' }, { status: 400 });
-    await projectFor(projectId, user);
+    const project = await projectFor(projectId, user);
+    if (projectRole(project, user.userId) !== 'owner') throw new Error('FORBIDDEN');
 
     const { DB, BUCKET } = runtime();
     const existing = await DB.prepare('SELECT photo_key FROM milestones WHERE id=? AND project_id=?')
