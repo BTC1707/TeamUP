@@ -8,6 +8,7 @@ import {
 } from '@/lib/ai';
 import { clearMessages, conversation, readMessages } from '@/lib/conversations';
 import { readProject, replaceRows } from '@/lib/store';
+import { projectUpdateAllowed } from '@/lib/project-permissions';
 import { countNewRecords, creationStatements } from '@/lib/usage';
 import {
   rangesToProposal,
@@ -89,8 +90,10 @@ async function appendAssistant(db: D1Database, chatId: string, text: string) {
   return readMessages(db, chatId);
 }
 
-async function persistProject(project: Project, availabilityUser?: string) {
+async function persistProject(project: Project, actorId: string, availabilityUser?: string) {
   const { DB } = runtime();
+  const previous = await readProject(DB, project.id);
+  if (!projectUpdateAllowed(previous, project, actorId)) throw new Error('FORBIDDEN');
   const groupId = project.groupId;
   const owner = project.owner;
   if (!groupId || !owner) throw new Error('NOT_FOUND');
@@ -139,10 +142,11 @@ async function mergeAvailability(projectId: string, userId: string, slots: strin
       availability: { ...project.availability, [userId]: merged },
     },
     userId,
+    userId,
   );
 }
 
-async function appendTasks(projectId: string, tasks: Task[]) {
+async function appendTasks(projectId: string, tasks: Task[], actorId: string) {
   const { DB } = runtime();
   const project = await readProject(DB, projectId);
   if (project.tasks.length + tasks.length > 500) {
@@ -151,10 +155,10 @@ async function appendTasks(projectId: string, tasks: Task[]) {
   return persistProject({
     ...project,
     tasks: [...project.tasks, ...tasks],
-  });
+  }, actorId);
 }
 
-async function appendMilestones(projectId: string, milestones: Milestone[]) {
+async function appendMilestones(projectId: string, milestones: Milestone[], actorId: string) {
   const { DB } = runtime();
   const project = await readProject(DB, projectId);
   if (project.milestones.length + milestones.length > 100) {
@@ -163,43 +167,43 @@ async function appendMilestones(projectId: string, milestones: Milestone[]) {
   return persistProject({
     ...project,
     milestones: [...project.milestones, ...milestones],
-  });
+  }, actorId);
 }
 
-async function updateTaskStatuses(projectId: string, changes: TaskStatusChange[]) {
+async function updateTaskStatuses(projectId: string, changes: TaskStatusChange[], actorId: string) {
   const { DB } = runtime();
   const project = await readProject(DB, projectId);
   const valid = validateStatusChanges(changes, project);
   if (!valid) throw new AIError('That status update is no longer valid.', 400);
-  return persistProject(applyStatusChanges(project, valid));
+  return persistProject(applyStatusChanges(project, valid), actorId);
 }
 
-async function updateTaskEdits(projectId: string, changes: TaskEditChange[]) {
+async function updateTaskEdits(projectId: string, changes: TaskEditChange[], actorId: string) {
   const { DB } = runtime();
   const project = await readProject(DB, projectId);
   const valid = validateTaskEdits(changes, project);
   if (!valid) throw new AIError('That task edit is no longer valid.', 400);
-  return persistProject(applyTaskEdits(project, valid));
+  return persistProject(applyTaskEdits(project, valid), actorId);
 }
 
-async function updateMilestoneEdits(projectId: string, changes: MilestoneEditChange[]) {
+async function updateMilestoneEdits(projectId: string, changes: MilestoneEditChange[], actorId: string) {
   const { DB } = runtime();
   const project = await readProject(DB, projectId);
   const valid = validateMilestoneEdits(changes, project);
   if (!valid) throw new AIError('That milestone edit is no longer valid.', 400);
-  return persistProject(applyMilestoneEdits(project, valid));
+  return persistProject(applyMilestoneEdits(project, valid), actorId);
 }
 
-async function updateBrief(projectId: string, description: string) {
+async function updateBrief(projectId: string, description: string, actorId: string) {
   const { DB } = runtime();
   const project = await readProject(DB, projectId);
-  return persistProject({ ...project, description });
+  return persistProject({ ...project, description }, actorId);
 }
 
-async function updateReminders(projectId: string, reminderHours: number) {
+async function updateReminders(projectId: string, reminderHours: number, actorId: string) {
   const { DB } = runtime();
   const project = await readProject(DB, projectId);
-  return persistProject({ ...project, reminderHours });
+  return persistProject({ ...project, reminderHours }, actorId);
 }
 
 function proposalPreview(summary: string, labels: string[], intro: string) {
@@ -426,7 +430,7 @@ export async function POST(req: Request) {
       }
       const { DB } = runtime();
       chatId = await conversation(DB, project.id, u);
-      const updated = await appendTasks(project.id, tasks);
+      const updated = await appendTasks(project.id, tasks, u.userId);
       const n = tasks.length;
       const messages = await appendAssistant(
         DB,
@@ -450,7 +454,7 @@ export async function POST(req: Request) {
       }
       const { DB } = runtime();
       chatId = await conversation(DB, project.id, u);
-      const updated = await appendMilestones(project.id, milestones);
+      const updated = await appendMilestones(project.id, milestones, u.userId);
       const n = milestones.length;
       const messages = await appendAssistant(
         DB,
@@ -471,7 +475,7 @@ export async function POST(req: Request) {
       }
       const { DB } = runtime();
       chatId = await conversation(DB, project.id, u);
-      const updated = await updateTaskStatuses(project.id, changes);
+      const updated = await updateTaskStatuses(project.id, changes, u.userId);
       const n = changes.length;
       const messages = await appendAssistant(
         DB,
@@ -492,7 +496,7 @@ export async function POST(req: Request) {
       }
       const { DB } = runtime();
       chatId = await conversation(DB, project.id, u);
-      const updated = await updateTaskEdits(project.id, changes);
+      const updated = await updateTaskEdits(project.id, changes, u.userId);
       const n = changes.length;
       const messages = await appendAssistant(
         DB,
@@ -513,7 +517,7 @@ export async function POST(req: Request) {
       }
       const { DB } = runtime();
       chatId = await conversation(DB, project.id, u);
-      const updated = await updateMilestoneEdits(project.id, changes);
+      const updated = await updateMilestoneEdits(project.id, changes, u.userId);
       const n = changes.length;
       const messages = await appendAssistant(
         DB,
@@ -534,7 +538,7 @@ export async function POST(req: Request) {
       }
       const { DB } = runtime();
       chatId = await conversation(DB, project.id, u);
-      const updated = await updateBrief(project.id, description);
+      const updated = await updateBrief(project.id, description, u.userId);
       const messages = await appendAssistant(DB, chatId, 'Done — I updated the assignment brief.');
       return Response.json({ messages, project: updated, pendingProposal: null });
     }
@@ -550,7 +554,7 @@ export async function POST(req: Request) {
       }
       const { DB } = runtime();
       chatId = await conversation(DB, project.id, u);
-      const updated = await updateReminders(project.id, hours);
+      const updated = await updateReminders(project.id, hours, u.userId);
       const messages = await appendAssistant(
         DB,
         chatId,

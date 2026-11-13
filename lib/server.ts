@@ -80,6 +80,8 @@ export function failure(e: unknown) {
               ? 'A teammate updated this project. Reload before saving again.'
               : message === 'LEAVE_OWNER'
                 ? 'Project owners can’t leave. Delete the project if the team is finished.'
+                : message === 'FORBIDDEN'
+                  ? 'Your project role does not allow that change.'
                 : 'Unable to complete this request. Please try again.',
     },
     {
@@ -92,6 +94,8 @@ export function failure(e: unknown) {
               ? 409
               : message === 'LEAVE_OWNER'
                 ? 400
+                : message === 'FORBIDDEN'
+                  ? 403
                 : 500,
     },
   );

@@ -6,6 +6,7 @@ export type Member = {
   avatarUrl?: string;
   /** Stable calendar color, unique among people on this project. */
   color?: string;
+  role?: 'owner' | 'admin' | 'member';
   /** Nickname teammates see on this project. Blank uses `name`. */
   nickname?: string;
 };

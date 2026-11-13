@@ -16,6 +16,7 @@ import { avatarUrlFor } from '@/lib/avatar';
 import { availabilitySlotsError } from '@/lib/availability-calendar';
 import { countNewRecords, creationStatements, projectCreatedStatements } from '@/lib/usage';
 import { memberLabel, type Project } from '@/lib/model';
+import { projectUpdateAllowed } from '@/lib/project-permissions';
 export async function GET(req: Request) {
   try {
     const u = await identity();
@@ -161,6 +162,32 @@ export async function POST(req: Request) {
       }
       return Response.json({ ok: true });
     }
+    if (body.action === 'roles') {
+      const projectId = typeof body.project === 'string' ? body.project : '';
+      const current = await projectFor(projectId, u);
+      if (current.owner !== u.userId) throw new Error('NOT_FOUND');
+      if (!Array.isArray(body.roles))
+        return Response.json({ error: 'Choose a role for each teammate.' }, { status: 400 });
+      const requested = body.roles as { id?: unknown; role?: unknown }[];
+      const nonOwners = current.members.filter((member) => member.id !== current.owner);
+      if (
+        requested.length !== nonOwners.length ||
+        requested.some(
+          (entry) =>
+            typeof entry.id !== 'string' ||
+            !['admin', 'member'].includes(String(entry.role)) ||
+            !nonOwners.some((member) => member.id === entry.id),
+        ) ||
+        new Set(requested.map((entry) => entry.id)).size !== requested.length
+      )
+        return Response.json({ error: 'Choose a valid role for each teammate.' }, { status: 400 });
+      const statements = requested.map((entry) =>
+        DB.prepare('UPDATE group_members SET role=? WHERE group_id=? AND user_id=? AND user_id<>?')
+          .bind(entry.role, current.groupId, entry.id, current.owner),
+      );
+      if (statements.length) await DB.batch(statements);
+      return Response.json({ project: await readProject(DB, projectId) });
+    }
     if (!['create', 'update'].includes(body.action))
       return Response.json({ error: 'Unknown action.' }, { status: 400 });
     const p = body.project as Project;
@@ -240,25 +267,29 @@ export async function POST(req: Request) {
       p.owner = previous.owner;
       p.groupId = previous.groupId;
       if (previous.owner !== u.userId) p.members = previous.members;
+      if (!projectUpdateAllowed(previous, p, u.userId)) throw new Error('FORBIDDEN');
     }
     const owner = p.owner!;
     if (!p.members.some((m) => userKey(m.email) === owner))
       return Response.json({ error: 'The group owner cannot be removed.' }, { status: 400 });
     const ids = new Map(p.members.map((m) => [m.id, userKey(m.email)]));
-    p.members = p.members.map((m) => ({
-      ...m,
-      id: userKey(m.email),
-      email: m.email.toLowerCase(),
-    }));
-    if (!create && previous && owner === u.userId) {
-      const nicknames = new Map(
-        previous.members.map((m) => [m.id, m.nickname?.trim() || '']),
-      );
-      p.members = p.members.map((m) => {
-        const nickname = nicknames.get(m.id);
-        return nickname ? { ...m, nickname } : { ...m, nickname: undefined };
-      });
-    }
+    const existingRoles = new Map(
+      (previous?.members || []).map((member) => [userKey(member.email), member.role]),
+    );
+    const nicknames = new Map(
+      (previous?.members || []).map((member) => [userKey(member.email), member.nickname?.trim() || '']),
+    );
+    p.members = p.members.map((m) => {
+      const id = userKey(m.email);
+      const nickname = nicknames.get(id);
+      return {
+        ...m,
+        id,
+        email: m.email.toLowerCase(),
+        role: id === owner ? 'owner' : create ? 'member' : existingRoles.get(id) || 'member',
+        ...(nickname ? { nickname } : { nickname: undefined }),
+      };
+    });
     if (!unique(p.members))
       return Response.json({ error: 'Each teammate needs a different email.' }, { status: 400 });
     const scope = (id: string) => (id.startsWith(p.id + ':') ? id : p.id + ':' + id);

@@ -1637,6 +1637,33 @@ button.member-row-button:focus-visible {
   object-fit: cover;
   display: block;
 }
+.project-editor-roles {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #e7e4f5;
+  border-radius: 16px;
+  background: linear-gradient(145deg, #fbfaff, #f5f3ff);
+}
+.project-editor-roles-heading strong { color: #29263a; font-size: 14px; }
+.project-editor-roles-heading p { margin: 4px 0 2px; color: #777487; font-size: 12px; }
+.project-role-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #eeecf6;
+  border-radius: 12px;
+  background: #fff;
+}
+.project-role-person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.project-role-person > span:last-child { display: grid; min-width: 0; gap: 2px; }
+.project-role-person strong { font-size: 13px; color: #302d3d; }
+.project-role-person small { overflow: hidden; color: #898696; font-size: 11px; text-overflow: ellipsis; }
+.project-role-badge { padding: 5px 10px; border-radius: 999px; background: #f0eef9; color: #615b78; font-size: 11px; font-weight: 700; text-transform: capitalize; }
+.project-role-badge.owner { background: #e8e5ff; color: #5547a6; }
+.project-role-badge.admin { background: #e9f2ff; color: #3f6595; }
 .project-editor-notifications {
   display: grid;
   gap: 8px;
