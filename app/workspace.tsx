@@ -113,7 +113,6 @@ const nav = [
   ['Availability', CalendarDays],
   ['Files', FolderOpen],
   ['Team', Users],
-  ['Project settings', Settings],
 ] as const;
 const PAGE_HELP: Record<string, { description: string; tips: string[] }> = {
   Overview: {
@@ -170,15 +169,7 @@ const PAGE_HELP: Record<string, { description: string; tips: string[] }> = {
     tips: [
       'Check member task counts to see how work is distributed.',
       'Project owners can invite teammates; invitees accept from their notifications or invitation link.',
-      'Use Project settings to find the project sharing controls.',
-    ],
-  },
-  'Project settings': {
-    description: 'Manage project details, sharing, and project level actions.',
-    tips: [
-      'Update the project name and deadline so the shared plan stays current.',
-      'Create an invitation link to bring teammates into the project.',
-      'Only the project owner can delete the project; deletion also removes its tasks, files, and conversations.',
+      'Use the three-dot menu beside a project in the sidebar to edit its details and reminders.',
     ],
   },
 };
@@ -1298,10 +1289,12 @@ export default function Workspace({
     }
     const remaining = projects.filter((p) => p.id !== id);
     setProjects(remaining);
-    const nextProject = remaining[0] || emptyProject;
-    setProject(nextProject);
-    persistProjectSelection(nextProject.id || null);
-    setFiles([]);
+    if (project.id === id) {
+      const nextProject = remaining[0] || emptyProject;
+      setProject(nextProject);
+      persistProjectSelection(nextProject.id || null);
+      setFiles([]);
+    }
   }
 
   async function leaveCurrentProject() {
@@ -1480,11 +1473,12 @@ export default function Workspace({
     }
   }
   async function save(next: Project, create = false) {
+    const previous = projects.find((entry) => entry.id === next.id) || null;
     // Local sandbox: keep everything in React state (no API / no DB).
     if (localOnly) {
       if (user?.id) {
         const forMe = localTaskActivityNotifications(
-          create ? null : project,
+          create ? null : previous,
           next,
           user.id,
           user.name || 'Teammate',
@@ -1918,6 +1912,7 @@ export default function Workspace({
           course: draft.course || '',
           description: draft.description || '',
           due: draft.due,
+          reminderHours: Number(draft.reminderHours ?? target.reminderHours),
         });
       } else {
         const newId = uid();
@@ -2301,10 +2296,12 @@ export default function Workspace({
                           description: p.description,
                           due: p.due,
                           photoUrl: p.photoUrl,
+                          reminderHours: p.reminderHours,
+                          owner: p.owner,
                         });
                       }}
                     >
-                      Edit project
+                      Project settings
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -2587,7 +2584,7 @@ export default function Workspace({
                   setView('Overview');
                   setFilter('active');
                 }
-                if (tour === 4) setView('Project settings');
+                if (tour === 4) setView('Team');
               }}
             />
           )}
@@ -2616,8 +2613,7 @@ export default function Workspace({
                   : project.name}
               </p>
             </div>
-            {view !== 'Project settings' &&
-              view !== 'Availability' &&
+            {view !== 'Availability' &&
               view !== 'Files' &&
               view !== 'Team' && (
               <button
@@ -3471,11 +3467,7 @@ export default function Workspace({
           {!isDemo && view === 'Team' && (
             <>
               <div className='notice flex flex-wrap items-center justify-between gap-3'>
-                <span>Manage your teammates here. Invites show up in their notifications.</span>
-                <button className='btn demo-banner-action' onClick={() => setView('Project settings')}>
-                  <Settings size={16} />
-                  Project settings
-                </button>
+                <span>Manage teammates and invitations here. Use the three-dot menu beside a project to edit its details and reminders.</span>
               </div>
               {isOwner && !localOnly ? <InviteLink key={project.id} project={project.id} /> : null}
               <section className='panel team-list-panel'>
@@ -3512,144 +3504,6 @@ export default function Workspace({
                 })}
               </section>
             </>
-          )}
-          {!isDemo && view === 'Project settings' && (
-            <div className='stack project-settings' data-tutorial-step='4'>
-              <section className='panel'>
-                <div className='panel-heading'>
-                  <div>
-                    <h2>Project details</h2>
-                    <p className='subtext'>
-                      Update the basics and a shared project photo everyone can see.
-                    </p>
-                  </div>
-                  <button
-                    type='button'
-                    className='btn subtle'
-                    onClick={() =>
-                      open('project', {
-                        id: project.id,
-                        name: project.name,
-                        course: project.course,
-                        description: project.description,
-                        due: project.due,
-                        photoUrl: project.photoUrl,
-                      })
-                    }
-                  >
-                    Edit details
-                  </button>
-                </div>
-                <div className='profile-photo-row'>
-                  <span className={'project-settings-photo' + (project.photoUrl ? '' : ' empty')}>
-                    {project.photoUrl ? (
-                      <img src={project.photoUrl} alt='' />
-                    ) : (
-                      <span>No photo</span>
-                    )}
-                  </span>
-                  <div className='profile-photo-actions'>
-                    <button
-                      type='button'
-                      className='btn'
-                      disabled={avatarBusy || !project.id}
-                      onClick={() => projectPhotoInputRef.current?.click()}
-                    >
-                      {avatarBusy
-                        ? 'Updating…'
-                        : project.photoUrl
-                          ? 'Change photo'
-                          : 'Upload photo'}
-                    </button>
-                    {project.photoUrl ? (
-                      <button
-                        type='button'
-                        className='btn subtle'
-                        disabled={avatarBusy}
-                        onClick={() => void removeProjectPhoto(project.id)}
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-                <p className='form-note'>
-                  JPEG, PNG, WebP, or GIF. Drag and zoom after you choose a photo.
-                </p>
-                <div className='project-settings-summary'>
-                  <div>
-                    <strong>{project.name}</strong>
-                    <small className='block'>{project.course || 'No course listed'}</small>
-                  </div>
-                  <small>Due {fmt(project.due)}</small>
-                </div>
-              </section>
-              <section className='panel'>
-                <div className='panel-heading'>
-                  <div>
-                    <h2>Share project</h2>
-                    <p className='subtext'>
-                      Invite teammates to {project.name}. Only project members can access your work.
-                    </p>
-                  </div>
-                </div>
-                {localOnly ? (
-                  <div className='notice'>
-                    Invitation links need the live workspace. This local sandbox does not create
-                    real invitations.
-                  </div>
-                ) : isOwner ? (
-                  <InviteLink key={project.id} project={project.id} />
-                ) : (
-                  <div className='notice'>
-                    Ask the project owner to create an invitation link for new teammates.
-                  </div>
-                )}
-                <button className='btn subtle' onClick={() => setView('Team')}>
-                  Manage team <ArrowRight size={16} />
-                </button>
-              </section>
-              {!isOwner ? (
-                <section className='panel'>
-                  <div className='panel-heading'>
-                    <div>
-                      <h2>Leave project</h2>
-                      <p className='subtext'>
-                        Drop your access to {project.name}. Your tasks become unassigned so the team
-                        can hand them to someone else.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    className='btn danger delete-project-button'
-                    onClick={() => open('leave-project', {})}
-                  >
-                    Leave project
-                  </button>
-                </section>
-              ) : null}
-              <section className='panel'>
-                <div className='panel-heading'>
-                  <div>
-                    <h2>Delete project</h2>
-                    <p className='subtext'>
-                      Permanently remove this project and its tasks, files, and conversations for
-                      everyone.
-                    </p>
-                  </div>
-                </div>
-                {isOwner ? (
-                  <button
-                    className='btn danger delete-project-button'
-                    onClick={() => open('delete-project', { confirmation: '' })}
-                  >
-                    Delete project
-                  </button>
-                ) : (
-                  <p className='subtext'>Only the project owner can delete this project.</p>
-                )}
-              </section>
-            </div>
           )}
         </div>
       </main>
@@ -3774,7 +3628,7 @@ export default function Workspace({
                   'delete-project': 'Delete project',
                   'ai-settings': 'Connect AI',
                   brief: 'Assignment brief',
-                  project: draft.id ? 'Edit project' : 'Create a project',
+                  project: draft.id ? 'Project settings' : 'Create a project',
                   task: draft.id ? 'Edit task' : 'Add a task',
                   milestone: draft.id ? 'Edit milestone' : 'Add a milestone',
                   member: 'Add a team member',
@@ -3797,7 +3651,7 @@ export default function Workspace({
                   ? 'Review their assigned work and move tasks to someone else if needed.'
                   : modal === 'project'
                     ? draft.id
-                      ? 'Update the project details teammates see.'
+                      ? 'Edit the project name, details, photo, and reminder timing.'
                       : 'Give your group a place to make progress.'
                     : modal === 'milestone'
                       ? draft.id
@@ -3842,7 +3696,7 @@ export default function Workspace({
                         : 'Name'}
                   <input
                     required
-                    maxLength={modal === 'rename-file' ? 200 : 100}
+                    maxLength={['project', 'rename-file'].includes(modal) ? 200 : 100}
                     value={draft.name || ''}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                     placeholder={
@@ -3994,6 +3848,54 @@ export default function Workspace({
                       <p className='form-note'>
                         Shared with everyone on this project. Drag and zoom after choosing a photo.
                       </p>
+                      <section className='project-editor-notifications'>
+                        <h3>Project notifications</h3>
+                        <p>Choose when task reminders arrive for this project.</p>
+                        <label>
+                          Send task reminders
+                          <Picker
+                            value={String(draft.reminderHours || 24)}
+                            onChange={(hours) => setDraft({ ...draft, reminderHours: Number(hours) })}
+                            options={[
+                              { value: '1', label: '1 hour before a task is due' },
+                              { value: '6', label: '6 hours before a task is due' },
+                              { value: '12', label: '12 hours before a task is due' },
+                              { value: '24', label: '1 day before a task is due' },
+                              { value: '48', label: '2 days before a task is due' },
+                              { value: '72', label: '3 days before a task is due' },
+                              { value: '168', label: '1 week before a task is due' },
+                            ]}
+                          />
+                        </label>
+                        <small>Reminder timing is saved separately for each project.</small>
+                      </section>
+                      <section className='project-editor-danger'>
+                        <div>
+                          <strong>{draft.owner === user?.id ? 'Delete project' : 'Leave project'}</strong>
+                          <p>
+                            {draft.owner === user?.id
+                              ? 'Permanently remove this project and its tasks, files, and conversations for everyone.'
+                              : 'Leave this project and give up access to its shared work.'}
+                          </p>
+                        </div>
+                        {draft.owner === user?.id ? (
+                          <button
+                            type='button'
+                            className='btn danger'
+                            disabled={busy}
+                            onClick={() => open('delete-project', {
+                              confirmation: '',
+                              targetProject: projects.find((entry) => entry.id === draft.id) || project,
+                            })}
+                          >
+                            Delete project
+                          </button>
+                        ) : (
+                          <button type='button' className='btn danger' disabled={busy} onClick={() => open('leave-project', {})}>
+                            Leave project
+                          </button>
+                        )}
+                      </section>
                     </>
                   ) : (
                     <>
@@ -4265,12 +4167,12 @@ export default function Workspace({
           {modal === 'delete-project' && (
             <div className='form'>
               <p>
-                Delete <strong>{project.name}</strong> for everyone? Tasks, milestones,
+                Delete <strong>{draft.targetProject?.name || project.name}</strong> for everyone? Tasks, milestones,
                 availability, files, invitations, and project chats will be removed. This cannot be
                 undone.
               </p>
               <label>
-                Type “{project.name}” to confirm
+                Type “{draft.targetProject?.name || project.name}” to confirm
                 <input
                   autoComplete='off'
                   value={draft.confirmation || ''}
@@ -4279,14 +4181,14 @@ export default function Workspace({
               </label>
               <button
                 className='btn danger'
-                disabled={busy || draft.confirmation !== project.name}
+                disabled={busy || draft.confirmation !== (draft.targetProject?.name || project.name)}
                 onClick={async () => {
+                  const targetProject: Project = draft.targetProject || project;
                   setBusy(true);
                   try {
-                    await removeProjectById(project.id, project.name, project.version);
-                    setView('Overview');
+                    await removeProjectById(targetProject.id, targetProject.name, targetProject.version);
                     setModal('');
-                    toast.success('Project deleted.');
+                    toast.success(`${targetProject.name} deleted.`);
                   } catch (e) {
                     setError((e as Error).message);
                   } finally {
@@ -4618,8 +4520,7 @@ export default function Workspace({
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
-          const projectId =
-            modal === 'project' && draft.id ? draft.id : project.id;
+          const projectId = modal === 'project' && draft.id ? draft.id : project.id;
           if (file && projectId) beginPhotoCrop(file, 'project', { projectId });
         }}
       />

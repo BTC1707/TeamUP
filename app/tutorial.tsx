@@ -86,10 +86,10 @@ export default function Tutorial({
     ],
     [
       'Bring your team together',
-      'Open Project settings to share your project. Use Team to manage members. Demo mode explains invites without creating real access.',
-      'Open Project settings to share and manage your team.',
-      'Open Project settings',
-      view === 'Project settings',
+      'Open Team to see members and create invitations. Use a project’s three-dot menu to edit its details and reminders.',
+      'Open Team to manage members and invitations.',
+      'Open Team',
+      view === 'Team',
     ],
     [
       'You’re ready',

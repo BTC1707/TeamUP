@@ -1587,12 +1587,65 @@ button.member-row-button:focus-visible {
   object-fit: cover;
   display: block;
 }
-.project-settings-summary {
+.project-editor-notifications {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #e7e3f6;
+  border-radius: 12px;
+  background: #f8f7ff;
+}
+.project-editor-notifications h3 {
+  margin: 0;
+  color: #34314f;
+  font-size: 14px;
+  font-weight: 700;
+}
+.project-editor-notifications > p,
+.project-editor-notifications > small {
+  margin: 0;
+  color: #70788a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.project-editor-notifications label {
+  display: grid;
+  gap: 7px;
+  margin-top: 5px;
+  color: #41495b;
+  font-size: 12px;
+  font-weight: 650;
+}
+.project-editor-notifications [data-slot='select-trigger'] {
+  min-height: 44px;
+  background: #fff;
+}
+.project-editor-danger {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
   align-items: center;
-  margin-top: 8px;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid #f0dfe2;
+  border-radius: 12px;
+  background: #fffafb;
+}
+.project-editor-danger strong {
+  color: #3c3440;
+  font-size: 13px;
+}
+.project-editor-danger p {
+  margin: 4px 0 0;
+  color: #7d737c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 520px) {
+  .project-editor-danger {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 .team-note {
   border: 1px solid #e8e5f5;
@@ -2726,55 +2779,6 @@ body.tutorial-running .app-main {
   background: #000;
   content: '';
 }
-.project-settings {
-  width: 100%;
-  max-width: 800px;
-  margin-inline: auto;
-  text-align: center;
-}
-.project-settings > .panel {
-  padding: 28px clamp(16px, 4vw, 36px);
-}
-.project-settings .panel-heading {
-  justify-content: center;
-  padding: 16px 0 22px;
-}
-.project-settings .subtext {
-  max-width: 600px;
-  margin-inline: auto;
-  overflow-wrap: anywhere;
-}
-.project-settings .invite-panel {
-  border: 0;
-  border-radius: 0;
-  padding: 18px 0 24px;
-  margin: 0;
-  box-shadow: none;
-}
-.project-settings .invite-panel > .flex {
-  justify-content: center;
-}
-.project-settings .invite-panel small {
-  display: block;
-  max-width: 580px;
-  margin-inline: auto;
-  line-height: 1.7;
-}
-.project-settings .invite-url {
-  width: 100%;
-  max-width: 580px;
-  margin-inline: auto;
-}
-.project-settings .notice {
-  margin-bottom: 22px;
-}
-.project-settings > .panel > .btn {
-  margin-inline: auto;
-}
-.project-settings .delete-project-button {
-  margin-top: 14px;
-}
-
 /* =============================================================================
    Landing page (`/`) — styles for app/landing/*.tsx
    Edit About/visual copy in those TSX files; tweak look here.
