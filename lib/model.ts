@@ -1,12 +1,21 @@
 export type Member = {
   id: string;
+  /** Account nickname. */
   name: string;
   email: string;
   avatarUrl?: string;
   /** Stable calendar color, unique among people on this project. */
   color?: string;
   role?: 'owner' | 'admin' | 'member';
+  /** Nickname teammates see on this project. Blank uses `name`. */
+  nickname?: string;
 };
+
+/** Name shown to teammates: the project nickname, or the account nickname. */
+export function memberLabel(member: { name: string; nickname?: string | null }) {
+  const nickname = member.nickname?.trim();
+  return nickname || member.name;
+}
 export type Task = {
   id: string;
   title: string;

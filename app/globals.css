@@ -849,9 +849,59 @@ button.member-row-button:focus-visible {
   line-height: 1.6;
   color: #858b9a;
 }
+.attach-files {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 500;
+}
 .plan-review {
   min-width: 0;
   max-width: 100%;
+}
+.plan-review-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 14px 0 12px;
+}
+.plan-review-tabs button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #e0e4ed;
+  border-radius: 10px;
+  background: #fff;
+  color: #3d4454;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.plan-review-tabs button span {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f0eef7;
+  color: #5c5678;
+  font-size: 12px;
+  font-weight: 700;
+}
+.plan-review-tabs button.is-selected {
+  background: #5b54d9;
+  border-color: #5b54d9;
+  color: #fff;
+}
+.plan-review-tabs button.is-selected span {
+  background: #ffffff2e;
+  color: #fff;
+}
+.plan-review-tabs button:focus-visible {
+  outline: 2px solid #8c80e0;
+  outline-offset: 2px;
 }
 .plan-review-section-head {
   display: flex;
@@ -1614,12 +1664,65 @@ button.member-row-button:focus-visible {
 .project-role-badge { padding: 5px 10px; border-radius: 999px; background: #f0eef9; color: #615b78; font-size: 11px; font-weight: 700; text-transform: capitalize; }
 .project-role-badge.owner { background: #e8e5ff; color: #5547a6; }
 .project-role-badge.admin { background: #e9f2ff; color: #3f6595; }
-.project-settings-summary {
+.project-editor-notifications {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #e7e3f6;
+  border-radius: 12px;
+  background: #f8f7ff;
+}
+.project-editor-notifications h3 {
+  margin: 0;
+  color: #34314f;
+  font-size: 14px;
+  font-weight: 700;
+}
+.project-editor-notifications > p,
+.project-editor-notifications > small {
+  margin: 0;
+  color: #70788a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.project-editor-notifications label {
+  display: grid;
+  gap: 7px;
+  margin-top: 5px;
+  color: #41495b;
+  font-size: 12px;
+  font-weight: 650;
+}
+.project-editor-notifications [data-slot='select-trigger'] {
+  min-height: 44px;
+  background: #fff;
+}
+.project-editor-danger {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
   align-items: center;
-  margin-top: 8px;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid #f0dfe2;
+  border-radius: 12px;
+  background: #fffafb;
+}
+.project-editor-danger strong {
+  color: #3c3440;
+  font-size: 13px;
+}
+.project-editor-danger p {
+  margin: 4px 0 0;
+  color: #7d737c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+@media (max-width: 520px) {
+  .project-editor-danger {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 .team-note {
   border: 1px solid #e8e5f5;
@@ -1719,8 +1822,44 @@ button.member-row-button:focus-visible {
 .notification-popover-head {
   border-bottom: 1px solid #ececf4;
 }
+.notification-popover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
 .notification-popover-foot {
   border-top: 1px solid #ececf4;
+  flex-wrap: wrap;
+}
+.pending-invite-list {
+  display: flex;
+  flex-direction: column;
+}
+.pending-invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid #eef1f6;
+}
+.pending-invite-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.pending-invite-copy {
+  min-width: 0;
+}
+.pending-invite-copy strong {
+  display: block;
+  font-size: 15px;
+}
+.pending-invite-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .notification-list {
   max-height: 320px;
@@ -2753,55 +2892,6 @@ body.tutorial-running .app-main {
   background: #000;
   content: '';
 }
-.project-settings {
-  width: 100%;
-  max-width: 800px;
-  margin-inline: auto;
-  text-align: center;
-}
-.project-settings > .panel {
-  padding: 28px clamp(16px, 4vw, 36px);
-}
-.project-settings .panel-heading {
-  justify-content: center;
-  padding: 16px 0 22px;
-}
-.project-settings .subtext {
-  max-width: 600px;
-  margin-inline: auto;
-  overflow-wrap: anywhere;
-}
-.project-settings .invite-panel {
-  border: 0;
-  border-radius: 0;
-  padding: 18px 0 24px;
-  margin: 0;
-  box-shadow: none;
-}
-.project-settings .invite-panel > .flex {
-  justify-content: center;
-}
-.project-settings .invite-panel small {
-  display: block;
-  max-width: 580px;
-  margin-inline: auto;
-  line-height: 1.7;
-}
-.project-settings .invite-url {
-  width: 100%;
-  max-width: 580px;
-  margin-inline: auto;
-}
-.project-settings .notice {
-  margin-bottom: 22px;
-}
-.project-settings > .panel > .btn {
-  margin-inline: auto;
-}
-.project-settings .delete-project-button {
-  margin-top: 14px;
-}
-
 /* =============================================================================
    Landing page (`/`) — styles for app/landing/*.tsx
    Edit About/visual copy in those TSX files; tweak look here.
@@ -3096,10 +3186,6 @@ body.tutorial-running .app-main {
 .landing-footer a {
   color: #5b54d9;
   font-weight: 550;
-}
-.landing-footer a.landing-footer-admin {
-  color: #8b91a0;
-  font-weight: 500;
 }
 .landing-faq {
   position: relative;

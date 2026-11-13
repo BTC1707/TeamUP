@@ -1,6 +1,6 @@
 import { completeWithParts, AIError } from '@/lib/ai';
 import type { GeminiPart } from '@/lib/plan-documents';
-import type { Milestone, Project, Task } from '@/lib/model';
+import { memberLabel, type Milestone, type Project, type Task } from '@/lib/model';
 
 export type GeneratedPlan = {
   tasks: Task[];
@@ -53,7 +53,7 @@ export async function generatePlanFromParts(opts: {
       text: JSON.stringify({
         today,
         deadline: project.due,
-        members: project.members.map((m) => ({ id: m.id, name: m.name })),
+        members: project.members.map((m) => ({ id: m.id, name: memberLabel(m) })),
         existingTasks: project.tasks.map((t) => t.title),
         existingMilestones: project.milestones.map((m) => m.title),
         requirements: requirements || null,

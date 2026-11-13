@@ -1,4 +1,4 @@
-import { future, type Member, type Milestone, type Project, type Task } from '@/lib/model';
+import { future, memberLabel, type Member, type Milestone, type Project, type Task } from '@/lib/model';
 
 export type TaskDraft = {
   title: string;
@@ -39,28 +39,34 @@ export function normalizeTaskDue(raw: unknown, projectDue?: string) {
   return defaultTaskDue(projectDue);
 }
 
+function memberNames(member: Member) {
+  return [member.nickname, member.name]
+    .map((value) => value?.trim().toLowerCase())
+    .filter((value): value is string => !!value);
+}
+
 /** Match assigneeName to a member id, or '' if none. Returns null when ambiguous. */
 export function resolveAssigneeId(name: unknown, members: Member[]) {
   if (typeof name !== 'string' || !name.trim()) return '';
   const needle = name.trim().toLowerCase();
   if (needle === 'me' || needle === 'myself') return null; // caller should substitute current user
   const exact = members.filter(
-    (m) => m.name.toLowerCase() === needle || m.email.toLowerCase() === needle,
+    (m) => memberNames(m).includes(needle) || m.email.toLowerCase() === needle,
   );
   if (exact.length === 1) return exact[0].id;
   if (exact.length > 1) return null;
 
   const starts = members.filter(
     (m) =>
-      m.name.toLowerCase().startsWith(needle) ||
-      m.email.toLowerCase().startsWith(needle) ||
-      m.name.toLowerCase().split(/\s+/).some((part) => part.startsWith(needle)),
+      memberNames(m).some(
+        (value) => value.startsWith(needle) || value.split(/\s+/).some((part) => part.startsWith(needle)),
+      ) || m.email.toLowerCase().startsWith(needle),
   );
   if (starts.length === 1) return starts[0].id;
   if (starts.length > 1) return null;
 
   const partial = members.filter(
-    (m) => m.name.toLowerCase().includes(needle) || m.email.toLowerCase().includes(needle),
+    (m) => memberNames(m).some((value) => value.includes(needle)) || m.email.toLowerCase().includes(needle),
   );
   if (partial.length === 1) return partial[0].id;
   if (partial.length > 1) return null;
@@ -135,7 +141,7 @@ export function draftsToProposal(
           return {
             proposal: null,
             error: null,
-            clarify: `Who should own “${title}”? Pick one teammate: ${project.members.map((m) => m.name).join(', ') || 'add members first'}.`,
+            clarify: `Who should own “${title}”? Pick one teammate: ${project.members.map((m) => memberLabel(m)).join(', ') || 'add members first'}.`,
           };
         }
         assignee = resolved;

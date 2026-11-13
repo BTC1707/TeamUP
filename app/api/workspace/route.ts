@@ -15,7 +15,7 @@ import { insertNotifications, taskActivityNotifications } from '@/lib/notificati
 import { avatarUrlFor } from '@/lib/avatar';
 import { availabilitySlotsError } from '@/lib/availability-calendar';
 import { countNewRecords, creationStatements, projectCreatedStatements } from '@/lib/usage';
-import type { Project } from '@/lib/model';
+import { memberLabel, type Project } from '@/lib/model';
 import { projectUpdateAllowed } from '@/lib/project-permissions';
 export async function GET(req: Request) {
   try {
@@ -84,10 +84,20 @@ export async function POST(req: Request) {
           .replace(/\s+/g, ' ')
           .slice(0, 80),
         zone = String(body.timeZone || 'UTC');
-      if (!name) return Response.json({ error: 'Enter your name.' }, { status: 400 });
+      if (!name) return Response.json({ error: 'Enter a nickname.' }, { status: 400 });
       const nameParts = name.split(' ');
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ');
+      const projectNickname = String(body.projectNickname || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 80);
+      const projectId = String(body.projectId || '');
+      let groupId = '';
+      if (projectId) {
+        const current = await projectFor(projectId, u);
+        groupId = current.groupId || '';
+      }
       try {
         new Intl.DateTimeFormat('en', { timeZone: zone });
       } catch {
@@ -115,6 +125,13 @@ export async function POST(req: Request) {
           body.notifications === false ? 0 : 1,
           u.userId,
         ),
+        ...(groupId
+          ? [
+              DB.prepare(
+                'UPDATE group_members SET nickname=? WHERE group_id=? AND user_id=?',
+              ).bind(projectNickname || null, groupId, u.userId),
+            ]
+          : []),
       ]);
       return Response.json({ ok: true });
     }
@@ -123,6 +140,9 @@ export async function POST(req: Request) {
       if (!id) return Response.json({ error: 'Choose a project to leave.' }, { status: 400 });
       const current = await projectFor(id, u);
       if (!Number.isInteger(body.version) || body.version !== current.version) throw new Error('CONFLICT');
+      const actorName = memberLabel(
+        current.members.find((member) => member.id === u.userId) || { name: u.displayName },
+      );
       const left = await leaveProject(DB, id, u);
       if (left.ownerId) {
         try {
@@ -132,8 +152,8 @@ export async function POST(req: Request) {
               projectId: id,
               type: 'member_left',
               title: 'Teammate left',
-              body: `${u.displayName} left ${left.projectName}. Their tasks were reassigned to you.`,
-              meta: { actorName: u.displayName, projectName: left.projectName },
+              body: `${actorName} left ${left.projectName}. Their tasks were reassigned to you.`,
+              meta: { actorName, projectName: left.projectName },
             },
           ]);
         } catch (error) {
@@ -256,13 +276,18 @@ export async function POST(req: Request) {
     const existingRoles = new Map(
       (previous?.members || []).map((member) => [userKey(member.email), member.role]),
     );
+    const nicknames = new Map(
+      (previous?.members || []).map((member) => [userKey(member.email), member.nickname?.trim() || '']),
+    );
     p.members = p.members.map((m) => {
       const id = userKey(m.email);
+      const nickname = nicknames.get(id);
       return {
         ...m,
         id,
         email: m.email.toLowerCase(),
         role: id === owner ? 'owner' : create ? 'member' : existingRoles.get(id) || 'member',
+        ...(nickname ? { nickname } : { nickname: undefined }),
       };
     });
     if (!unique(p.members))
@@ -343,7 +368,7 @@ export async function POST(req: Request) {
         previous || null,
         saved,
         u.userId,
-        u.displayName,
+        memberLabel(saved.members.find((member) => member.id === u.userId) || { name: u.displayName }),
       );
       if (activity.length) await insertNotifications(DB, activity);
     } catch (error) {

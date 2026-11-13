@@ -57,6 +57,8 @@ export const groupMembers = sqliteTable(
     role: text('role').notNull().default('member'),
     /** Unique calendar color for this person on the project. */
     color: text('color'),
+    /** Name teammates see on this project. Blank uses the account nickname. */
+    nickname: text('nickname'),
   },
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user').on(t.userId)],
 );

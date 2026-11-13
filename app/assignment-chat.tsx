@@ -510,8 +510,8 @@ export default function AssignmentChat({
               <MessageCircle size={20} />
             </span>
             <div className='min-w-0'>
-              <h2>Assignment chat</h2>
-              <p className='subtext !mt-1'>A place to work through the details.</p>
+              <h2>AI planning</h2>
+              <p className='subtext !mt-1'>A private chat with AI about this assignment.</p>
             </div>
           </div>
           <div className='chat-heading-actions'>
@@ -570,7 +570,7 @@ export default function AssignmentChat({
           ) : (
             messages.map((m) => (
               <article key={m.id} className={'chat-message ' + m.role}>
-                <span className='chat-who'>{m.role === 'user' ? 'You' : 'Teamup AI'}</span>
+                <span className='chat-who'>{m.role === 'user' ? 'You' : 'TeamUP AI'}</span>
                 <div className='chat-bubble-text'>{m.content}</div>
                 {pendingProposal && m.id === lastAssistantId && (
                   <div className='chat-proposal-actions'>
@@ -594,7 +594,7 @@ export default function AssignmentChat({
           )}
           {busy && (
             <article className='chat-message assistant'>
-              <span className='chat-who'>Teamup AI</span>
+              <span className='chat-who'>TeamUP AI</span>
               <div>
                 {queuedCount > 0
                   ? `Working through your question… ${queuedCount} more waiting.`
@@ -680,7 +680,7 @@ export default function AssignmentChat({
           <DialogHeader>
             <DialogTitle>Clear chat history?</DialogTitle>
             <DialogDescription>
-              This removes your Assignment chat messages for this project only. Tasks, milestones,
+              This removes your AI planning messages for this project only. Tasks, milestones,
               and other project data stay as they are.
             </DialogDescription>
           </DialogHeader>

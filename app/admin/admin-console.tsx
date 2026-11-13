@@ -283,7 +283,7 @@ export default function AdminConsole() {
       <main className='auth-page'>
         <div className='auth-card'>
           <a className='auth-brand' href='/'>
-            teamup<span>.</span>
+            TeamUP<span>.</span>
           </a>
           <h1>Admin</h1>
           <p className='auth-lede'>Sign in with an admin account to manage TeamUP accounts.</p>
@@ -337,7 +337,7 @@ export default function AdminConsole() {
       <header className='admin-top'>
         <div>
           <a className='auth-brand' href='/'>
-            teamup<span>.</span>
+            TeamUP<span>.</span>
           </a>
           <h1>Admin</h1>
           <p className='subtext'>
