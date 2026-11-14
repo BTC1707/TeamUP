@@ -15,7 +15,9 @@ import { insertNotifications, taskActivityNotifications } from '@/lib/notificati
 import { avatarUrlFor } from '@/lib/avatar';
 import { availabilitySlotsError } from '@/lib/availability-calendar';
 import { AIError, complete } from '@/lib/ai';
-import type { Project } from '@/lib/model';
+import { countAccomplishedMilestones, countNewRecords, creationStatements, projectCreatedStatements } from '@/lib/usage';
+import { memberLabel, type Project } from '@/lib/model';
+import { projectUpdateAllowed } from '@/lib/project-permissions';
 export async function GET(req: Request) {
   try {
     const u = await identity();
@@ -83,10 +85,20 @@ export async function POST(req: Request) {
           .replace(/\s+/g, ' ')
           .slice(0, 80),
         zone = String(body.timeZone || 'UTC');
-      if (!name) return Response.json({ error: 'Enter your name.' }, { status: 400 });
+      if (!name) return Response.json({ error: 'Enter a nickname.' }, { status: 400 });
       const nameParts = name.split(' ');
       const firstName = nameParts[0] || '';
       const lastName = nameParts.slice(1).join(' ');
+      const projectNickname = String(body.projectNickname || '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .slice(0, 80);
+      const projectId = String(body.projectId || '');
+      let groupId = '';
+      if (projectId) {
+        const current = await projectFor(projectId, u);
+        groupId = current.groupId || '';
+      }
       try {
         new Intl.DateTimeFormat('en', { timeZone: zone });
       } catch {
@@ -114,6 +126,13 @@ export async function POST(req: Request) {
           body.notifications === false ? 0 : 1,
           u.userId,
         ),
+        ...(groupId
+          ? [
+              DB.prepare(
+                'UPDATE group_members SET nickname=? WHERE group_id=? AND user_id=?',
+              ).bind(projectNickname || null, groupId, u.userId),
+            ]
+          : []),
       ]);
       return Response.json({ ok: true });
     }
@@ -232,6 +251,9 @@ export async function POST(req: Request) {
       if (!id) return Response.json({ error: 'Choose a project to leave.' }, { status: 400 });
       const current = await projectFor(id, u);
       if (!Number.isInteger(body.version) || body.version !== current.version) throw new Error('CONFLICT');
+      const actorName = memberLabel(
+        current.members.find((member) => member.id === u.userId) || { name: u.displayName },
+      );
       const left = await leaveProject(DB, id, u);
       if (left.ownerId) {
         try {
@@ -242,10 +264,10 @@ export async function POST(req: Request) {
               type: 'member_left',
               title: 'Teammate left',
               body: left.handoffTaskIds.length
-                ? `${u.displayName} left ${left.projectName}. Their tasks are assigned to you for now. Review and reassign them when you are ready.`
-                : `${u.displayName} left ${left.projectName}. They had no tasks to hand off.`,
+                ? `${actorName} left ${left.projectName}. Their tasks are assigned to you for now. Review and reassign them when you are ready.`
+                : `${actorName} left ${left.projectName}. They had no tasks to hand off.`,
               meta: {
-                actorName: u.displayName,
+                actorName,
                 projectName: left.projectName,
                 handoffTaskIds: JSON.stringify(left.handoffTaskIds),
               },
@@ -256,6 +278,32 @@ export async function POST(req: Request) {
         }
       }
       return Response.json({ ok: true });
+    }
+    if (body.action === 'roles') {
+      const projectId = typeof body.project === 'string' ? body.project : '';
+      const current = await projectFor(projectId, u);
+      if (current.owner !== u.userId) throw new Error('NOT_FOUND');
+      if (!Array.isArray(body.roles))
+        return Response.json({ error: 'Choose a role for each teammate.' }, { status: 400 });
+      const requested = body.roles as { id?: unknown; role?: unknown }[];
+      const nonOwners = current.members.filter((member) => member.id !== current.owner);
+      if (
+        requested.length !== nonOwners.length ||
+        requested.some(
+          (entry) =>
+            typeof entry.id !== 'string' ||
+            !['admin', 'member'].includes(String(entry.role)) ||
+            !nonOwners.some((member) => member.id === entry.id),
+        ) ||
+        new Set(requested.map((entry) => entry.id)).size !== requested.length
+      )
+        return Response.json({ error: 'Choose a valid role for each teammate.' }, { status: 400 });
+      const statements = requested.map((entry) =>
+        DB.prepare('UPDATE group_members SET role=? WHERE group_id=? AND user_id=? AND user_id<>?')
+          .bind(entry.role, current.groupId, entry.id, current.owner),
+      );
+      if (statements.length) await DB.batch(statements);
+      return Response.json({ project: await readProject(DB, projectId) });
     }
     if (!['create', 'update'].includes(body.action))
       return Response.json({ error: 'Unknown action.' }, { status: 400 });
@@ -336,16 +384,29 @@ export async function POST(req: Request) {
       p.owner = previous.owner;
       p.groupId = previous.groupId;
       if (previous.owner !== u.userId) p.members = previous.members;
+      if (!projectUpdateAllowed(previous, p, u.userId)) throw new Error('FORBIDDEN');
     }
     const owner = p.owner!;
     if (!p.members.some((m) => userKey(m.email) === owner))
       return Response.json({ error: 'The group owner cannot be removed.' }, { status: 400 });
     const ids = new Map(p.members.map((m) => [m.id, userKey(m.email)]));
-    p.members = p.members.map((m) => ({
-      ...m,
-      id: userKey(m.email),
-      email: m.email.toLowerCase(),
-    }));
+    const existingRoles = new Map(
+      (previous?.members || []).map((member) => [userKey(member.email), member.role]),
+    );
+    const nicknames = new Map(
+      (previous?.members || []).map((member) => [userKey(member.email), member.nickname?.trim() || '']),
+    );
+    p.members = p.members.map((m) => {
+      const id = userKey(m.email);
+      const nickname = nicknames.get(id);
+      return {
+        ...m,
+        id,
+        email: m.email.toLowerCase(),
+        role: id === owner ? 'owner' : create ? 'member' : existingRoles.get(id) || 'member',
+        ...(nickname ? { nickname } : { nickname: undefined }),
+      };
+    });
     if (!unique(p.members))
       return Response.json({ error: 'Each teammate needs a different email.' }, { status: 400 });
     const scope = (id: string) => (id.startsWith(p.id + ':') ? id : p.id + ':' + id);
@@ -406,6 +467,16 @@ export async function POST(req: Request) {
         ),
       );
     stmts.push(...replaceRows(DB, p, group, owner, token, create || owner === u.userId, u.userId));
+    stmts.push(
+      ...creationStatements(
+        DB,
+        p.id,
+        token,
+        countNewRecords(p.tasks, previous?.tasks),
+        countAccomplishedMilestones(p.milestones, previous?.milestones),
+      ),
+    );
+    if (create) stmts.push(...projectCreatedStatements(DB, owner, p.id, token));
     const results = await DB.batch(stmts);
     if (!create && !results[0].meta.changes) throw new Error('CONFLICT');
     const saved = await readProject(DB, p.id);
@@ -414,7 +485,7 @@ export async function POST(req: Request) {
         previous || null,
         saved,
         u.userId,
-        u.displayName,
+        memberLabel(saved.members.find((member) => member.id === u.userId) || { name: u.displayName }),
       );
       if (activity.length) await insertNotifications(DB, activity);
     } catch (error) {

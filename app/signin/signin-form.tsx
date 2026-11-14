@@ -58,7 +58,7 @@ export default function SignInForm() {
     <main className='auth-page'>
       <div className='auth-card'>
         <a className='auth-brand' href='/'>
-          teamup<span>.</span>
+          TeamUP<span>.</span>
         </a>
 
         <h1>Welcome back</h1>

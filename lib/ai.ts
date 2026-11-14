@@ -1,6 +1,6 @@
 import { geminiKey } from '@/lib/ai-config';
 import { readableProjectDocuments, type GeminiPart } from '@/lib/plan-documents';
-import type { Project } from '@/lib/model';
+import { memberLabel, type Project } from '@/lib/model';
 export type AIMessage = { role: 'system' | 'user' | 'assistant'; content: string };
 export type AIContentPart = GeminiPart;
 export class AIError extends Error {
@@ -193,7 +193,7 @@ export async function classifyChatIntent(
   windowDates: string[],
   project: Project,
 ) {
-  const members = project.members.map((m) => m.name).filter(Boolean);
+  const members = project.members.map((m) => memberLabel(m)).filter(Boolean);
   const milestones = project.milestones.map((m) => m.title).filter(Boolean);
   const taskTitles = project.tasks.map((t) => `${t.title} [${t.status}]`).slice(0, 40);
   const raw = await complete(
@@ -279,7 +279,7 @@ export function assignmentContextFromSnapshot(
       description: project.description,
       deadline: project.due,
       course: project.course,
-      members: project.members.map((m) => ({ id: m.id, name: m.name })),
+      members: project.members.map((m) => ({ id: m.id, name: memberLabel(m) })),
       tasks: project.tasks,
       milestones: project.milestones,
     },

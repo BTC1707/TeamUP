@@ -1,5 +1,6 @@
 'use client';
-import type { Member, Milestone, Task } from '@/lib/model';
+import { useState } from 'react';
+import { memberLabel, type Member, type Milestone, type Task } from '@/lib/model';
 import {
   Select,
   SelectContent,
@@ -34,6 +35,8 @@ export default function PlanReview({
   onCancel: () => void;
   onRegenerate?: () => void;
 }) {
+  const [section, setSection] = useState<'milestones' | 'tasks'>('milestones');
+
   function updateTask(taskId: string, patch: Partial<Task>) {
     onChange({
       ...plan,
@@ -87,13 +90,37 @@ export default function PlanReview({
       )}
 
       <p className='form-note'>
-        Edit anything below before accepting. You can drop milestones, tweak due dates, or keep only
-        the tasks you want.
+        Review milestones, then switch to tasks. Edit anything before accepting.
         {cancelDeletesProject
           ? ' Cancel removes this project so you can start over.'
           : ''}
       </p>
 
+      <div className='plan-review-tabs' role='tablist' aria-label='Plan sections'>
+        <button
+          type='button'
+          role='tab'
+          aria-selected={section === 'milestones'}
+          className={section === 'milestones' ? 'is-selected' : undefined}
+          onClick={() => setSection('milestones')}
+        >
+          Milestones
+          <span>{plan.milestones.length}</span>
+        </button>
+        <button
+          type='button'
+          role='tab'
+          aria-selected={section === 'tasks'}
+          className={section === 'tasks' ? 'is-selected' : undefined}
+          onClick={() => setSection('tasks')}
+        >
+          Tasks
+          <span>{plan.tasks.length}</span>
+        </button>
+      </div>
+
+      {section === 'milestones' ? (
+        <>
       <div className='plan-review-section-head'>
         <h3>
           {plan.milestones.length
@@ -159,7 +186,9 @@ export default function PlanReview({
           ))}
         </div>
       )}
-
+        </>
+      ) : (
+        <>
       <h3>
         {plan.tasks.length
           ? `${plan.tasks.length} suggested task${plan.tasks.length === 1 ? '' : 's'}`
@@ -167,7 +196,7 @@ export default function PlanReview({
       </h3>
       {plan.tasks.length === 0 ? (
         <p className='form-note'>
-          All tasks were removed. Accept will only add the milestones still listed above.
+          All tasks were removed. Accept will only add the milestones on the Milestones tab.
         </p>
       ) : (
         <div className='plan-review-tasks'>
@@ -218,7 +247,7 @@ export default function PlanReview({
                       <SelectItem value='none'>Unassigned</SelectItem>
                       {members.map((m) => (
                         <SelectItem key={m.id} value={m.id}>
-                          {m.name}
+                          {memberLabel(m)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -258,6 +287,8 @@ export default function PlanReview({
             </div>
           ))}
         </div>
+      )}
+        </>
       )}
 
       <div className='plan-review-actions'>

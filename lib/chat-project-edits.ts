@@ -1,5 +1,5 @@
 import { complete } from '@/lib/ai';
-import type { Milestone, Project, Task } from '@/lib/model';
+import { memberLabel, type Milestone, type Project, type Task } from '@/lib/model';
 import {
   normalizeTaskDue,
   resolveAssigneeId,
@@ -160,7 +160,7 @@ export function draftsToTaskEditProposal(
           return {
             proposal: null,
             error: null,
-            clarify: `Who should own “${task.title}”? Pick one teammate: ${project.members.map((m) => m.name).join(', ') || 'add members first'}.`,
+            clarify: `Who should own “${task.title}”? Pick one teammate: ${project.members.map((m) => memberLabel(m)).join(', ') || 'add members first'}.`,
           };
         }
         assignee = resolved;

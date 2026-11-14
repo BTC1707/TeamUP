@@ -8,13 +8,21 @@ import {
   searchInvitees,
   inviteMember,
   respondToMemberInvite,
+  listPendingMemberInvites,
 } from '@/lib/invites';
 import { EmailError, emailConfigured } from '@/lib/email';
 
 export async function GET(req: Request) {
   try {
     sameOrigin(req);
-    await identity();
+    const u = await identity();
+    const pending = new URL(req.url).searchParams.get('pending') === '1';
+    if (pending) {
+      return Response.json(
+        { invites: await listPendingMemberInvites(runtime().DB, u.userId) },
+        { headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
     return Response.json({ emailReady: emailConfigured() });
   } catch (e) {
     return failure(e);

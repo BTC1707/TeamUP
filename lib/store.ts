@@ -1,4 +1,4 @@
-import type { Project } from './model';
+import type { Member, Project } from './model';
 import { avatarUrlFor } from './avatar';
 import { assignMemberColors, canonicalMemberColor } from './availability-calendar';
 import { milestonePhotoUrlFor, projectPhotoUrlFor } from './project-media';
@@ -277,12 +277,16 @@ export function replaceRows(
     out.push(q(`DELETE FROM group_members WHERE group_id=? AND ${guard}`, [group]));
     for (const m of assignMemberColors(p.members))
       out.push(
-        q(`INSERT INTO group_members(group_id,user_id,role,color) SELECT ?,?,?,? WHERE ${guard}`, [
-          group,
-          m.id,
-          m.id === owner ? 'owner' : 'member',
-          m.color,
-        ]),
+        q(
+          `INSERT INTO group_members(group_id,user_id,role,color,nickname) SELECT ?,?,?,?,? WHERE ${guard}`,
+          [
+            group,
+            m.id,
+            m.id === owner ? 'owner' : m.role === 'admin' ? 'admin' : 'member',
+            m.color,
+            m.nickname?.trim().slice(0, 80) || null,
+          ],
+        ),
       );
   }
   out.push(q(`DELETE FROM tasks WHERE project_id=? AND ${guard}`, [p.id]));
@@ -349,13 +353,23 @@ export function replaceRows(
 async function memberColors(
   db: D1Database,
   groupId: string | null,
-  rows: { id: string; name: string; email: string; avatar_key?: string | null; color?: string | null }[],
+  rows: {
+    id: string;
+    name: string;
+    email: string;
+    avatar_key?: string | null;
+    color?: string | null;
+    role?: string | null;
+    nickname?: string | null;
+  }[],
 ) {
-  const current = rows.map((member) => ({
+  const current: Member[] = rows.map((member) => ({
     id: member.id,
     name: member.name,
     email: member.email,
+    role: member.role === 'admin' ? 'admin' : member.role === 'owner' ? 'owner' : 'member',
     color: member.color || undefined,
+    ...(member.nickname?.trim() ? { nickname: member.nickname.trim() } : {}),
     ...(member.avatar_key ? { avatarUrl: avatarUrlFor(member.id, member.avatar_key) } : {}),
   }));
   const assigned = assignMemberColors(current);
@@ -378,7 +392,7 @@ export async function readProject(db: D1Database, id: string): Promise<Project> 
   const results = await db.batch([
     db
       .prepare(
-        'SELECT u.id,u.name,u.email,u.avatar_key,g.color FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY g.role DESC,u.name',
+        'SELECT u.id,u.name,u.email,u.avatar_key,g.color,g.role,g.nickname FROM users u JOIN group_members g ON g.user_id=u.id WHERE g.group_id=? ORDER BY CASE g.role WHEN \'owner\' THEN 0 WHEN \'admin\' THEN 1 ELSE 2 END,u.name',
       )
       .bind(r.group_id),
     db.prepare('SELECT * FROM tasks WHERE project_id=? ORDER BY due_date,id').bind(id),
@@ -464,7 +478,9 @@ export async function deleteProject(db: D1Database, id: string, u: Actor, versio
     ),
   ];
   for (const table of [
+    'project_member_invites',
     'project_invites',
+    'notifications',
     'conversations',
     'chats',
     'availability',

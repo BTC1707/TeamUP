@@ -232,6 +232,25 @@ export async function markNotificationsRead(
   );
 }
 
+/** Remove notification rows. Pending project invites stay on the Invites tab. */
+export async function clearNotifications(
+  db: D1Database,
+  userId: string,
+  ids: string[] | 'all',
+) {
+  if (ids === 'all') {
+    await db.prepare('DELETE FROM notifications WHERE user_id=?').bind(userId).run();
+    return;
+  }
+  const clean = ids.filter((id) => typeof id === 'string' && id.length <= 80).slice(0, 100);
+  if (!clean.length) return;
+  await db.batch(
+    clean.map((id) =>
+      db.prepare('DELETE FROM notifications WHERE id=? AND user_id=?').bind(id, userId),
+    ),
+  );
+}
+
 export function taskActivityNotifications(
   previous: Project | null,
   next: Project,

@@ -35,7 +35,7 @@ export default function ForgotPasswordPage() {
     <main className='auth-page'>
       <div className='auth-card'>
         <a className='auth-brand' href='/'>
-          teamup<span>.</span>
+          TeamUP<span>.</span>
         </a>
 
         <h1>Forgot your password?</h1>
