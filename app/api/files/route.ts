@@ -10,15 +10,20 @@ export async function GET(req: Request) {
     if (id) {
       const row = await DB.prepare('SELECT * FROM files WHERE id=? AND project_id=?')
         .bind(id, project)
-        .first<{ id: string; name: string; type: string }>();
+        .first<{ id: string; name: string; type: string; storage_key: string | null }>();
       if (!row) return new Response('Not found', { status: 404 });
-      const blob = await BUCKET.get((row as any).storage_key || row.id);
+      const blob = await BUCKET.get(row.storage_key || row.id);
       if (!blob) return new Response('Not found', { status: 404 });
+      const preview = url.searchParams.get('preview') === '1';
+      const previewTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+      if (preview && !previewTypes.has(row.type.toLowerCase()))
+        return new Response('Preview unavailable for this file type.', { status: 415 });
       return new Response(blob.body, {
         headers: {
-          'Content-Type': 'application/octet-stream',
-          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(row.name)}`,
+          'Content-Type': preview ? row.type.toLowerCase() : 'application/octet-stream',
+          'Content-Disposition': `${preview ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(row.name)}`,
           'X-Content-Type-Options': 'nosniff',
+          ...(preview ? { 'Content-Security-Policy': "default-src 'none'; sandbox" } : {}),
         },
       });
     }

@@ -1490,6 +1490,15 @@ button.member-row-button:focus-visible {
   color: #8b7dd0;
   flex-shrink: 0;
 }
+.file-thumbnail {
+  width: 64px;
+  height: 64px;
+  flex: 0 0 64px;
+  object-fit: cover;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
 .file-row-menu {
   padding: 6px;
   border: 0;

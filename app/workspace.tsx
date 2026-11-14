@@ -3506,7 +3506,17 @@ export default function Workspace({
               {files.length && !isDemo ? (
                 files.map((f) => (
                   <div className='file-row' key={f.id}>
-                    <FileText size={26} />
+                    {typeof f.type === 'string' &&
+                    ['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(f.type.toLowerCase()) ? (
+                      <img
+                        className='file-thumbnail'
+                        src={`/api/files?project=${encodeURIComponent(project.id)}&id=${encodeURIComponent(f.id)}&preview=1`}
+                        alt={`Preview of ${f.name}`}
+                        loading='lazy'
+                      />
+                    ) : (
+                      <FileText size={26} aria-hidden='true' />
+                    )}
                     <div className='flex-1'>
                       <h3>{f.name}</h3>
                       <p className='subtext'>{Math.ceil(f.size / 1024)} KB</p>
