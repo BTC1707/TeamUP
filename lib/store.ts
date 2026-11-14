@@ -520,7 +520,11 @@ export async function leaveProject(db: D1Database, id: string, u: Actor) {
   ]);
   if (!results[0].meta.changes) throw new Error('CONFLICT');
   if (!results[1].meta.changes) throw new Error('NOT_FOUND');
-  return { ownerId: p.owner || '', projectName: p.name };
+  return {
+    ownerId: p.owner || '',
+    projectName: p.name,
+    handoffTaskIds: p.tasks.filter((task) => task.assignee === u.userId).map((task) => task.id),
+  };
 }
 export async function cleanupFiles(db: D1Database, bucket: R2Bucket, userId: string) {
   const rows = await db

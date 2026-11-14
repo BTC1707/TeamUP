@@ -500,6 +500,11 @@ export default function Workspace({
   const [aiReady, setAiReady] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [handoffTaskIds, setHandoffTaskIds] = useState<string[]>([]);
+  const [handoffAssignments, setHandoffAssignments] = useState<Record<string, string>>({});
+  const [handoffSuggestions, setHandoffSuggestions] = useState<
+    Record<string, { assigneeId: string; reason: string }>
+  >({});
   const [plan, setPlan] = useState<SuggestedPlan | null>(null);
   const [requirements, setRequirements] = useState('');
   const [planFileIds, setPlanFileIds] = useState<string[]>([]);
@@ -795,6 +800,104 @@ export default function Workspace({
       );
     } catch (error) {
       toast.error((error as Error).message || 'Could not update notifications.');
+    }
+  }
+
+  async function openTaskHandoff(note: AppNotification) {
+    let taskIds: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(note.meta.handoffTaskIds || '[]');
+      if (Array.isArray(parsed))
+        taskIds = [...new Set(parsed.filter((id): id is string => typeof id === 'string'))];
+    } catch {
+      toast.error('This handoff notification is incomplete.');
+      return;
+    }
+    if (!taskIds.length) {
+      toast.message('This teammate had no tasks to reassign.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const data = await api('/api/workspace');
+      const latest = data.projects.find((entry: Project) => entry.id === note.projectId);
+      if (!latest || latest.owner !== user?.id) {
+        toast.error('Only the project owner can review this task handoff.');
+        return;
+      }
+      const currentTaskIds = taskIds.filter((id) =>
+        latest.tasks.some((task: Task) => task.id === id && task.assignee === latest.owner),
+      );
+      if (!currentTaskIds.length) {
+        toast.message('These tasks have already been reassigned.');
+        return;
+      }
+      setProjects(data.projects);
+      selectProject(latest);
+      setHandoffTaskIds(currentTaskIds);
+      setHandoffAssignments(
+        Object.fromEntries(currentTaskIds.map((id) => [id, latest.owner || ''])),
+      );
+      setHandoffSuggestions({});
+      setDraft({ actorName: note.meta.actorName || 'your teammate' });
+      setModal('handoff');
+      setNotifOpen(false);
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not load this task handoff.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function recommendHandoffAssignments() {
+    const openTasks = handoffTaskIds.filter((id) =>
+      project.tasks.some((task) => task.id === id && task.status !== 'done'),
+    );
+    if (!openTasks.length) {
+      toast.message('There are no open tasks to recommend.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const suggestions: Record<string, { assigneeId: string; reason: string }> = {};
+      for (let i = 0; i < openTasks.length; i += 50) {
+        const result = await api('/api/workspace', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'recommend-handoff',
+            id: project.id,
+            taskIds: openTasks.slice(i, i + 50),
+          }),
+        });
+        for (const suggestion of result.recommendations || []) {
+          suggestions[suggestion.taskId] = {
+            assigneeId: suggestion.assigneeId,
+            reason: suggestion.reason,
+          };
+        }
+      }
+      setHandoffSuggestions(suggestions);
+      toast.success('AI recommendations are ready. Review and edit each assignment before saving.');
+    } catch (error) {
+      toast.error((error as Error).message || 'Could not get task recommendations.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveHandoffAssignments() {
+    const assigned = await save({
+      ...project,
+      tasks: project.tasks.map((task) =>
+        handoffTaskIds.includes(task.id)
+          ? { ...task, assignee: handoffAssignments[task.id] || project.owner || '' }
+          : task,
+      ),
+    });
+    if (assigned) {
+      setModal('');
+      toast.success('Task handoff saved.');
     }
   }
 
@@ -2425,6 +2528,10 @@ export default function Workspace({
                         onClick={() => {
                           if (!n.read) void markNotifications('read', [n.id]);
                           if (pendingInvite) return;
+                          if (n.type === 'member_left' && n.meta.handoffTaskIds) {
+                            void openTaskHandoff(n);
+                            return;
+                          }
                           if (n.projectId && n.projectId !== project.id) {
                             const target = projects.find((p) => p.id === n.projectId);
                             if (target) selectProject(target);
@@ -3764,7 +3871,7 @@ export default function Workspace({
       >
         <DialogContent
           className={`max-h-[88vh] overflow-x-hidden overflow-y-auto ${
-            modal === 'planner' && plan ? 'sm:max-w-[640px]' : 'sm:max-w-[520px]'
+            (modal === 'planner' && plan) || modal === 'handoff' ? 'sm:max-w-[640px]' : 'sm:max-w-[520px]'
           }`}
         >
           <DialogHeader>
@@ -3784,6 +3891,7 @@ export default function Workspace({
                   profile: 'Your account',
                   remove: 'Remove team member',
                   'leave-project': 'Leave project',
+                  handoff: 'Review task handoff',
                   'rename-file': 'Rename file',
                 }[modal]
               }
@@ -3795,6 +3903,8 @@ export default function Workspace({
                   : 'Review the suggested plan before adding it to your project.'
                 : modal === 'teammate'
                   ? 'Review their assigned work and move tasks to someone else if needed.'
+                  : modal === 'handoff'
+                    ? `Tasks from ${draft.actorName || 'your teammate'} are assigned to you. Review and adjust each assignment before saving.`
                   : modal === 'project'
                     ? draft.id
                       ? 'Update the project details teammates see.'
@@ -4444,6 +4554,108 @@ export default function Workspace({
               </button>
             </div>
           )}
+          {modal === 'handoff' && (
+            <div className='form'>
+              <p>
+                The tasks are currently assigned to you. Keep them with you or choose another team
+                member for each task. Your changes are saved when you confirm.
+              </p>
+              {!aiReady && (
+                <div className='notice'>
+                  Connect AI to get assignment recommendations. You can still reassign tasks manually.
+                </div>
+              )}
+              <button
+                type='button'
+                className='btn'
+                disabled={busy || !aiReady || !project.members.some((member) => member.id !== project.owner)}
+                onClick={() => void recommendHandoffAssignments()}
+              >
+                <Sparkles size={16} />{' '}
+                {busy ? 'Getting recommendations…' : 'Recommend assignments'}
+              </button>
+              <div className='teammate-task-list'>
+                {handoffTaskIds.map((id) => {
+                  const task = project.tasks.find((entry) => entry.id === id);
+                  if (!task) return null;
+                  const suggestion = handoffSuggestions[id];
+                  const suggestedMember = suggestion
+                    ? project.members.find((member) => member.id === suggestion.assigneeId)
+                    : undefined;
+                  return (
+                    <div className='teammate-task-row' key={task.id}>
+                      <div className='teammate-task-main'>
+                        <strong>{task.title}</strong>
+                        <small>
+                          Due{' '}
+                          {new Date(task.due + 'T12:00:00').toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                          })}{' '}
+                          ·{' '}
+                          {task.status === 'done'
+                            ? 'Completed'
+                            : task.status === 'progress'
+                              ? 'In progress'
+                              : 'To do'}
+                        </small>
+                      </div>
+                      <label className='teammate-reassign'>
+                        <span className='sr-only'>Assign {task.title}</span>
+                        <Picker
+                          value={handoffAssignments[task.id] || project.owner || 'none'}
+                          onChange={(value) =>
+                            setHandoffAssignments((current) => ({
+                              ...current,
+                              [task.id]: value === 'none' ? '' : value,
+                            }))
+                          }
+                          options={project.members.map((member) => ({
+                            value: member.id,
+                            label:
+                              member.id === project.owner
+                                ? `${member.name} (owner)`
+                                : member.name,
+                          }))}
+                        />
+                      </label>
+                      {suggestion && suggestedMember ? (
+                        <p className='form-note'>
+                          AI recommends {suggestedMember.name}: {suggestion.reason}{' '}
+                          <button
+                            type='button'
+                            className='underline'
+                            disabled={busy}
+                            onClick={() =>
+                              setHandoffAssignments((current) => ({
+                                ...current,
+                                [task.id]: suggestion.assigneeId,
+                              }))
+                            }
+                          >
+                            Use suggestion
+                          </button>
+                        </p>
+                      ) : task.status === 'done' ? (
+                        <p className='form-note'>Completed tasks stay with the owner.</p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+              <button
+                type='button'
+                className='btn primary'
+                disabled={busy}
+                onClick={() => void saveHandoffAssignments()}
+              >
+                Save assignments
+              </button>
+              <button type='button' className='btn' disabled={busy} onClick={() => setModal('')}>
+                Review later
+              </button>
+            </div>
+          )}
           {modal === 'remove' && (
             <div className='form'>
               <p>
@@ -4458,7 +4670,7 @@ export default function Workspace({
                     ...project,
                     members: project.members.filter((m) => m.id !== draft.id),
                     tasks: project.tasks.map((t) =>
-                      t.assignee === draft.id ? { ...t, assignee: project.owner } : t,
+                      t.assignee === draft.id ? { ...t, assignee: project.owner || '' } : t,
                     ),
                   });
                   if (ok) setModal('');
